@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from app.api.v1 import auth, user
 
 app = FastAPI(
     title="MeroSamasya",
@@ -10,6 +11,9 @@ app = FastAPI(
         "url": "https://github.com/sameer292/merosamasya_be",
     }
 )
+
+app.include_router(auth.router)
+app.include_router(user.router)
 
 @app.get("/",tags=["Root"])
 def root():
