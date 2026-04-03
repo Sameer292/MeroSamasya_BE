@@ -11,7 +11,7 @@ async def register(user: UserCreate):
         raise HTTPException(status_code=400, detail=result["error"])
     return result
 
-@router.post("/login", response_model=TokenResponse, status_code=status.HTTP_200_OK)
+@router.post("/login", response_model=TokenResponse)
 async def login(user: UserLogin):
     result = await login_user(user)
     if "error" in result:
@@ -23,7 +23,7 @@ async def login(user: UserLogin):
          "user_id": result["user_id"]
     }
 
-@router.post("/refresh", response_model=TokenResponse, status_code=status.HTTP_200_OK)
+@router.post("/refresh", response_model=TokenResponse)
 async def refresh(request: RefreshTokenRequest):
     result = await refresh_access_token(request.refresh_token)
     if "error" in result:
