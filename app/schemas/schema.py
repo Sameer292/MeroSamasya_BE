@@ -40,3 +40,7 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+class RegisterResponse(BaseModel):
+    message: str
+    user_id: UUID
