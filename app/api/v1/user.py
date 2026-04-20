@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from app.schemas.schema import UserResponse
 from app.dependencies.auth import get_current_user
 from app.core.database import db 
 
-router = APIRouter(prefix="/user", tags=["User"])
+router = APIRouter()
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
 async def get_me(current_user=Depends(get_current_user)):
     try:
         user_id = current_user.id

@@ -56,7 +56,6 @@ async def login_user(user: UserLogin):
         return {
             "access_token": auth_response.session.access_token,
             "refresh_token": auth_response.session.refresh_token,
-            "token_type": "bearer",
             "user_id": auth_response.user.id
         }
 
