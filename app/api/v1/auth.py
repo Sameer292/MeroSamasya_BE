@@ -8,14 +8,14 @@ router = APIRouter()
 async def register(user: UserCreate):
     result = await register_user(user)
     if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
     return result
 
 @router.post("/login", response_model=TokenResponse,status_code=status.HTTP_200_OK)
 async def login(user: UserLogin):
     result = await login_user(user)
     if "error" in result:
-        raise HTTPException(status_code=401, detail=result["error"])
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=result["error"])
     return {
          "access_token": result["access_token"],
          "refresh_token": result["refresh_token"],
@@ -26,5 +26,5 @@ async def login(user: UserLogin):
 async def refresh(request: RefreshTokenRequest):
     result = await refresh_access_token(request.refresh_token)
     if "error" in result:
-        raise HTTPException(status_code=401, detail=result["error"])
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=result["error"])
     return result
