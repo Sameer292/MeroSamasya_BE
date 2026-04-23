@@ -1,10 +1,14 @@
 from datetime import datetime
-from app.core.database import db
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import supabase_auth
+from app.models.models import User
 from app.schemas.schema import UserCreate, UserLogin
 
-async def register_user(user: UserCreate):
+async def register_user(user: UserCreate, db: AsyncSession):
+    user_id = None
     try:
-        auth_response = db.auth.sign_up({
+        auth_response = supabase_auth.auth.sign_up({
             "email": user.email,
             "password": user.password
         })
@@ -13,35 +17,46 @@ async def register_user(user: UserCreate):
             return {"error": "Registration failed"}
 
         user_id = auth_response.user.id
+        print("Auth user created:", user_id)  # check 1
 
-        db_response = db.table("Users").insert({
-            "id": user_id,
-            "email": user.email,
-            "first_name": user.first_name,
-            "middle_name": user.middle_name,
-            "last_name": user.last_name,
-            "phone": user.phone,
-            "role": user.role.value,
-            "profile_picture_url": user.profile_picture_url,
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
-            "deleted_at": None,
-            "account_status": "active"
-        }).execute()
+        new_user = User(
+            id=user_id,
+            email=user.email,
+            first_name=user.first_name,
+            middle_name=user.middle_name,
+            last_name=user.last_name,
+            phone=user.phone,
+            role="citizen",
+            profile_picture_url=None,
+            account_status="active",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            deleted_at=None,
+        )
 
-        if db_response.data is None:
-            db.auth.admin.delete_user(user_id)
-            return {"error": "Failed to create user profile"}
+        db.add(new_user)
+        print("User added to session")
+        
+        await db.commit()
+        print("Commit successful")
 
         return {"message": "User registered successfully", "user_id": user_id}
 
     except Exception as e:
-        return {"error": "Registration failed. Please try again."}
+        print("ERROR:", str(e))
+        await db.rollback()
+        if user_id is not None:
+            try:
+                supabase_auth.auth.admin.delete_user(str(user_id))
+                print("Auth user deleted successfully")
+            except Exception as delete_error:
+                print("Failed to delete auth user:", delete_error)
+        return {"error": f"Registration failed: {str(e)}"}
 
 
-async def login_user(user: UserLogin):
+async def login_user(user: UserLogin, db: AsyncSession):
     try:
-        auth_response = db.auth.sign_in_with_password({
+        auth_response = supabase_auth.auth.sign_in_with_password({
             "email": user.email,
             "password": user.password
         })
@@ -49,8 +64,12 @@ async def login_user(user: UserLogin):
         if not auth_response.user:
             return {"error": "Invalid email or password"}
 
-        db_user = db.table("Users").select("account_status").eq("id", auth_response.user.id).single().execute()
-        if not db_user.data or db_user.data["account_status"] != "active":
+        result = await db.execute(
+            select(User).where(User.id == auth_response.user.id)
+        )
+        db_user = result.scalar_one_or_none()
+
+        if not db_user or db_user.account_status != "active":
             return {"error": "Account not active"}
 
         return {
@@ -65,7 +84,7 @@ async def login_user(user: UserLogin):
 
 async def refresh_access_token(token: str):
     try:
-        response = db.auth.refresh_session(token)
+        response = supabase_auth.auth.refresh_session(token)
 
         if not response.session:
             return {"error": "Invalid refresh token"}
@@ -83,7 +102,7 @@ async def refresh_access_token(token: str):
 
 async def get_user_from_token(token: str):
     try:
-        response = db.auth.get_user(token)
+        response = supabase_auth.auth.get_user(token)
         if not response.user:
             return None
         return response.user

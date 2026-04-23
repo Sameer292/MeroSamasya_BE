@@ -5,14 +5,12 @@ from datetime import datetime
 from .enum import RoleEnum, AccountStatusEnum
 
 class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
     first_name: str
     middle_name: Optional[str] = None
     last_name: str
     phone: str
-    role: RoleEnum
-    profile_picture_url: Optional[str] = None
+    email: EmailStr
+    password: str
 
 class UserLogin(BaseModel):
     email: EmailStr
