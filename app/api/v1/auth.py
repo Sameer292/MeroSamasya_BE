@@ -18,11 +18,7 @@ async def login(user: UserLogin, db: AsyncSession = Depends(get_db)):
     result = await login_user(user, db)
     if "error" in result:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=result["error"])
-    return {
-        "access_token": result["access_token"],
-        "refresh_token": result["refresh_token"],
-        "user_id": result["user_id"]
-    }
+    return result
 
 @router.post("/refresh", response_model=TokenResponse, status_code=status.HTTP_200_OK)
 async def refresh(request: RefreshTokenRequest):

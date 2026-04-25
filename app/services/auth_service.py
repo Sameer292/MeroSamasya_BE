@@ -1,30 +1,57 @@
-from datetime import datetime
+import uuid
+import jwt
+import os
+from datetime import datetime, timedelta, timezone
+from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import supabase_auth
 from app.models.models import User
 from app.schemas.schema import UserCreate, UserLogin
+from dotenv import load_dotenv
+
+load_dotenv(".env")
+
+JWT_SECRET = os.getenv("JWT_SECRET")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60))
+REFRESH_TOKEN_EXPIRY_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRY_DAYS", 15))
+
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+
+def create_token(user_id: str, refresh: bool = False) -> str:
+    expiry = timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS) if refresh else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {
+        "sub": str(user_id),
+        "refresh": refresh,
+        "exp": datetime.now(timezone.utc) + expiry,
+        "jti": str(uuid.uuid4()),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def decode_token(token: str) -> dict:
+    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+
 
 async def register_user(user: UserCreate, db: AsyncSession):
-    user_id = None
     try:
-        auth_response = supabase_auth.auth.sign_up({
-            "email": user.email,
-            "password": user.password
-        })
-
-        if not auth_response.user:
-            return {"error": "Registration failed"}
-
-        user_id = auth_response.user.id
-        print("Auth user created:", user_id)  # check 1
+        existing = await db.execute(select(User).where(User.email == user.email))
+        if existing.scalar_one_or_none():
+            return {"error": "Email already registered"}
 
         new_user = User(
-            id=user_id,
             email=user.email,
-            first_name=user.first_name,
-            middle_name=user.middle_name,
-            last_name=user.last_name,
+            name=user.name,
+            password=hash_password(user.password),
             phone=user.phone,
             role="citizen",
             profile_picture_url=None,
@@ -35,47 +62,31 @@ async def register_user(user: UserCreate, db: AsyncSession):
         )
 
         db.add(new_user)
-        print("User added to session")
-        
         await db.commit()
-        print("Commit successful")
+        await db.refresh(new_user)
 
-        return {"message": "User registered successfully", "user_id": user_id}
+        return {"message": "User registered successfully", "user_id": new_user.id}
 
     except Exception as e:
-        print("ERROR:", str(e))
         await db.rollback()
-        if user_id is not None:
-            try:
-                supabase_auth.auth.admin.delete_user(str(user_id))
-                print("Auth user deleted successfully")
-            except Exception as delete_error:
-                print("Failed to delete auth user:", delete_error)
         return {"error": f"Registration failed: {str(e)}"}
 
 
 async def login_user(user: UserLogin, db: AsyncSession):
     try:
-        auth_response = supabase_auth.auth.sign_in_with_password({
-            "email": user.email,
-            "password": user.password
-        })
-
-        if not auth_response.user:
-            return {"error": "Invalid email or password"}
-
-        result = await db.execute(
-            select(User).where(User.id == auth_response.user.id)
-        )
+        result = await db.execute(select(User).where(User.email == user.email))
         db_user = result.scalar_one_or_none()
 
-        if not db_user or db_user.account_status != "active":
+        if not db_user or not verify_password(user.password, db_user.password):
+            return {"error": "Invalid email or password"}
+
+        if db_user.account_status != "active":
             return {"error": "Account not active"}
 
         return {
-            "access_token": auth_response.session.access_token,
-            "refresh_token": auth_response.session.refresh_token,
-            "user_id": auth_response.user.id
+            "access_token": create_token(db_user.id),
+            "refresh_token": create_token(db_user.id, refresh=True),
+            "user_id": db_user.id,
         }
 
     except Exception as e:
@@ -84,27 +95,29 @@ async def login_user(user: UserLogin, db: AsyncSession):
 
 async def refresh_access_token(token: str):
     try:
-        response = supabase_auth.auth.refresh_session(token)
+        payload = decode_token(token)
 
-        if not response.session:
-            return {"error": "Invalid refresh token"}
+        if not payload.get("refresh"):
+            return {"error": "Invalid token type"}
 
+        user_id = payload.get("sub")
         return {
-            "access_token": response.session.access_token,
-            "refresh_token": response.session.refresh_token,
-            "token_type": "bearer",
-            "user_id": response.user.id
+            "access_token": create_token(user_id),
+            "refresh_token": create_token(user_id, refresh=True),
+            "user_id": user_id,
         }
 
-    except Exception as e:
+    except jwt.ExpiredSignatureError:
+        return {"error": "Refresh token expired"}
+    except Exception:
         return {"error": "Failed to refresh token"}
 
 
 async def get_user_from_token(token: str):
     try:
-        response = supabase_auth.auth.get_user(token)
-        if not response.user:
+        payload = decode_token(token)
+        if payload.get("refresh"):
             return None
-        return response.user
-    except Exception as e:
+        return payload
+    except Exception:
         return None

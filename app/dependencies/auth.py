@@ -6,7 +6,7 @@ security = HTTPBearer()
 
 async def get_current_user(credentials=Depends(security)):
     token = credentials.credentials
-    user = await get_user_from_token(token)
-    if user is None:
+    payload = await get_user_from_token(token)
+    if payload is None:
         raise HTTPException(status_code=401, detail="Invalid token")
-    return user
+    return payload
