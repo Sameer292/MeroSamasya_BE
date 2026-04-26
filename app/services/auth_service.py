@@ -53,12 +53,6 @@ async def register_user(user: UserCreate, db: AsyncSession):
             name=user.name,
             password=hash_password(user.password),
             phone=user.phone,
-            role="citizen",
-            profile_picture_url=None,
-            account_status="active",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            deleted_at=None,
         )
 
         db.add(new_user)
