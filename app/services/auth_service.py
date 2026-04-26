@@ -112,12 +112,3 @@ async def refresh_access_token(token: str):
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to refresh token")
 
-
-async def get_user_from_token(token: str):
-    try:
-        payload = decode_token(token)
-        if payload.get("refresh"):
-            return None
-        return payload
-    except Exception:
-        return None
