@@ -9,6 +9,7 @@ from app.models.models import User
 from app.schemas.schema import UserCreate, UserLogin
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
+from email_validator import validate_email, EmailNotValidError
 
 load_dotenv(".env")
 
@@ -45,12 +46,18 @@ def decode_token(token: str) -> dict:
 
 async def register_user(user: UserCreate, db: AsyncSession):
     try:
-        existing = await db.execute(select(User).where(User.email == user.email))
+        try:
+            email_info = validate_email(user.email, check_deliverability=True)
+            email = email_info.normalized
+        except EmailNotValidError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address")
+
+        existing = await db.execute(select(User).where(User.email == email))
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
         new_user = User(
-            email=user.email,
+            email=email,
             name=user.name,
             password=hash_password(user.password),
             phone=user.phone,
@@ -111,4 +118,3 @@ async def refresh_access_token(token: str):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to refresh token")
-
