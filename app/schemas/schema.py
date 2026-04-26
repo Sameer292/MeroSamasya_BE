@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator, Field
+from pydantic import BaseModel, EmailStr, field_validator, Field, model_validator
 from typing import Annotated, Optional
 from datetime import datetime
 from .enum import RoleEnum, AccountStatusEnum
@@ -12,6 +12,7 @@ class UserCreate(BaseModel):
     phone: PhoneNumber
     email: EmailStr
     password: str
+    confirm_password: str
 
     @field_validator("password")
     @classmethod
@@ -24,6 +25,12 @@ class UserCreate(BaseModel):
             raise ValueError("Password must contain at least one number")
         return v
 
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
+    
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
