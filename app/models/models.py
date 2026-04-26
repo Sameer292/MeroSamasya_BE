@@ -2,18 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Text, Enum
 from app.core.database import Base
-import enum
-
-class RoleEnum(str, enum.Enum):
-    citizen = "citizen"
-    admin = "admin"
-    superadmin = "superadmin"
-
-class AccountStatusEnum(str, enum.Enum):
-    active = "active"
-    inactive = "inactive"
-    suspended = "suspended"
-    deleted = "deleted"
+from app.schemas.enum import RoleEnum, AccountStatusEnum
 
 class User(Base):
     __tablename__ = "Users"
