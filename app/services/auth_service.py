@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import User
 from app.schemas.schema import UserCreate, UserLogin
 from dotenv import load_dotenv
+from fastapi import HTTPException, status
 
 load_dotenv(".env")
 
@@ -46,7 +47,7 @@ async def register_user(user: UserCreate, db: AsyncSession):
     try:
         existing = await db.execute(select(User).where(User.email == user.email))
         if existing.scalar_one_or_none():
-            return {"error": "Email already registered"}
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
         new_user = User(
             email=user.email,
@@ -54,16 +55,17 @@ async def register_user(user: UserCreate, db: AsyncSession):
             password=hash_password(user.password),
             phone=user.phone,
         )
-
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
 
         return {"message": "User registered successfully", "user_id": new_user.id}
 
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         await db.rollback()
-        return {"error": f"Registration failed: {str(e)}"}
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Registration failed. Please try again.")
 
 
 async def login_user(user: UserLogin, db: AsyncSession):
@@ -72,10 +74,10 @@ async def login_user(user: UserLogin, db: AsyncSession):
         db_user = result.scalar_one_or_none()
 
         if not db_user or not verify_password(user.password, db_user.password):
-            return {"error": "Invalid email or password"}
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
         if db_user.account_status != "active":
-            return {"error": "Account not active"}
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account not active")
 
         return {
             "access_token": create_token(db_user.id),
@@ -83,8 +85,10 @@ async def login_user(user: UserLogin, db: AsyncSession):
             "user_id": db_user.id,
         }
 
-    except Exception as e:
-        return {"error": "Login failed. Please try again."}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Login failed. Please try again.")
 
 
 async def refresh_access_token(token: str):
@@ -92,7 +96,7 @@ async def refresh_access_token(token: str):
         payload = decode_token(token)
 
         if not payload.get("refresh"):
-            return {"error": "Invalid token type"}
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
 
         user_id = payload.get("sub")
         return {
@@ -101,10 +105,12 @@ async def refresh_access_token(token: str):
             "user_id": user_id,
         }
 
+    except HTTPException:
+        raise
     except jwt.ExpiredSignatureError:
-        return {"error": "Refresh token expired"}
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
     except Exception:
-        return {"error": "Failed to refresh token"}
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to refresh token")
 
 
 async def get_user_from_token(token: str):
