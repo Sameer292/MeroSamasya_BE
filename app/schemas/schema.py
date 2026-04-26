@@ -5,7 +5,7 @@ from .enum import RoleEnum, AccountStatusEnum
 import re
 
 FullName = Annotated[str, Field(min_length=2, max_length=50, pattern=r"^[a-zA-Z\s]+$", description="Letters and spaces only")]
-PhoneNumber = Annotated[str, Field(pattern=r"^\+?[0-9]{7,15}$", description="7-15 digits, optional + prefix")]
+PhoneNumber = Annotated[str, Field(pattern=r"^[0-9]{10}$", description="Number must be 10 digits")]
 
 class UserCreate(BaseModel):
     name: FullName

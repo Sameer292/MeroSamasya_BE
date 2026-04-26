@@ -20,9 +20,9 @@ class User(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String, nullable=False, unique=True)
-    name = Column(String, nullable=False)
+    name = Column(String, nullable=True)
     password = Column(String, nullable=False)
-    phone = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
     role = Column(Enum(RoleEnum, name="user_role_enum", create_type=False), nullable=False, default=RoleEnum.citizen)
     profile_picture_url = Column(Text, nullable=True)
     account_status = Column(Enum(AccountStatusEnum, name="account_status_enum", create_type=False), nullable=False, default=AccountStatusEnum.active)
