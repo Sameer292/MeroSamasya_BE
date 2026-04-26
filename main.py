@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.api.v1 import auth_routes, user_routes, admin_routes
+from app.api.v1 import auth
 from app.core.database import engine, Base
 
 @asynccontextmanager
@@ -22,9 +22,7 @@ app = FastAPI(
     },
 )
 
-app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(user_routes.router, prefix="/api/user", tags=["User"])
-app.include_router(admin_routes.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 
 @app.get("/", tags=["Root"])
 def root():
