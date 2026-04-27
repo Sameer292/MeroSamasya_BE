@@ -77,7 +77,10 @@ async def login_user(user: UserLogin, db: AsyncSession):
         result = await db.execute(select(User).where(User.email == user.email))
         db_user = result.scalar_one_or_none()
     except Exception:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Login failed. Please try again.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found.",
+        )
 
     if not db_user or not verify_password(user.password, db_user.password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
