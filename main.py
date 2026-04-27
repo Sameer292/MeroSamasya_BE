@@ -22,8 +22,9 @@ app = FastAPI(
     },
 )
 
-app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 
 @app.get("/", tags=["Root"])
 def root():
     return {"message": "Working"}
+
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])

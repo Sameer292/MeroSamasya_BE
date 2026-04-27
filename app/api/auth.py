@@ -7,6 +7,11 @@ from app.dependencies.auth import get_current_user
 
 router = APIRouter()
 
+
+@router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
+async def get_me(current_user=Depends(get_current_user)):
+    return current_user
+
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
     return await register_user(user, db)
@@ -18,7 +23,3 @@ async def login(user: UserLogin, db: AsyncSession = Depends(get_db)):
 @router.post("/refresh", response_model=TokenResponse, status_code=status.HTTP_200_OK)
 async def refresh(request: RefreshTokenRequest):
     return await refresh_access_token(request.refresh_token)
-
-@router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
-async def get_me(current_user=Depends(get_current_user)):
-    return current_user
