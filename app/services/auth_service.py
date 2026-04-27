@@ -82,16 +82,16 @@ async def login_user(user: UserLogin, db: AsyncSession):
             detail="User not found.",
         )
 
-    if not db_user or not verify_password(user.password, db_user.password):
+    if not db_user or not verify_password(user.password, str(db_user.password)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
-    if db_user.account_status != "active":
+    if str(db_user.account_status) != "active":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account not active")
 
     return {
-        "access_token": create_token(db_user.id),
-        "refresh_token": create_token(db_user.id, refresh=True),
-        "user_id": db_user.id,
+        "access_token": create_token(str(db_user.id)),
+        "refresh_token": create_token(str(db_user.id), refresh=True),
+        "user_id": str(db_user.id),
     }
 
 async def refresh_access_token(token: str):
@@ -106,6 +106,9 @@ async def refresh_access_token(token: str):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
 
     user_id = payload.get("sub")
+    if not isinstance(user_id, str) or not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject")
+
     return {
         "access_token": create_token(user_id),
         "refresh_token": create_token(user_id, refresh=True),
