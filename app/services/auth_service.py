@@ -46,16 +46,16 @@ def decode_token(token: str) -> dict:
 
 async def register_user(user: UserCreate, db: AsyncSession):
     try:
-        try:
-            email_info = validate_email(user.email, check_deliverability=True)
-            email = email_info.normalized
-        except EmailNotValidError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address")
+        email_info = validate_email(user.email, check_deliverability=True)
+        email = email_info.normalized
+    except EmailNotValidError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address")
 
-        existing = await db.execute(select(User).where(User.email == email))
-        if existing.scalar_one_or_none():
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+    existing = await db.execute(select(User).where(User.email == email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
+    try:
         new_user = User(
             email=email,
             name=user.name,
@@ -65,56 +65,46 @@ async def register_user(user: UserCreate, db: AsyncSession):
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
-
-        return {"message": "User registered successfully", "user_id": new_user.id}
-
-    except HTTPException:
-        raise
     except Exception:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Registration failed. Please try again.")
+
+    return {"message": "User registered successfully", "user_id": new_user.id}
 
 
 async def login_user(user: UserLogin, db: AsyncSession):
     try:
         result = await db.execute(select(User).where(User.email == user.email))
         db_user = result.scalar_one_or_none()
-
-        if not db_user or not verify_password(user.password, db_user.password):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-
-        if db_user.account_status != "active":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account not active")
-
-        return {
-            "access_token": create_token(db_user.id),
-            "refresh_token": create_token(db_user.id, refresh=True),
-            "user_id": db_user.id,
-        }
-
-    except HTTPException:
-        raise
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Login failed. Please try again.")
 
+    if not db_user or not verify_password(user.password, db_user.password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    if db_user.account_status != "active":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account not active")
+
+    return {
+        "access_token": create_token(db_user.id),
+        "refresh_token": create_token(db_user.id, refresh=True),
+        "user_id": db_user.id,
+    }
 
 async def refresh_access_token(token: str):
     try:
         payload = decode_token(token)
-
-        if not payload.get("refresh"):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
-
-        user_id = payload.get("sub")
-        return {
-            "access_token": create_token(user_id),
-            "refresh_token": create_token(user_id, refresh=True),
-            "user_id": user_id,
-        }
-
-    except HTTPException:
-        raise
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to refresh token")
+
+    if not payload.get("refresh"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+
+    user_id = payload.get("sub")
+    return {
+        "access_token": create_token(user_id),
+        "refresh_token": create_token(user_id, refresh=True),
+        "user_id": user_id,
+    }
