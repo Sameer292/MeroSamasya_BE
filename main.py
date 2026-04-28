@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from app.api import auth
 from app.core.database import engine, Base
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
@@ -26,5 +27,6 @@ app = FastAPI(
 @app.get("/", tags=["Root"])
 def root():
     return {"message": "Working"}
+
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
