@@ -30,7 +30,11 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_token(user_id: str, refresh: bool = False) -> str:
-    expiry = timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS) if refresh else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expiry = (
+        timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)
+        if refresh
+        else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     payload = {
         "sub": str(user_id),
         "refresh": refresh,
@@ -49,11 +53,15 @@ async def register_user(user: UserCreate, db: AsyncSession):
         email_info = validate_email(user.email, check_deliverability=True)
         email = email_info.normalized
     except EmailNotValidError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address"
+        )
 
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
+        )
 
     try:
         new_user = User(
@@ -67,7 +75,10 @@ async def register_user(user: UserCreate, db: AsyncSession):
         await db.refresh(new_user)
     except Exception:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Registration failed. Please try again.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed. Please try again.",
+        )
 
     return {"message": "User registered successfully", "user_id": new_user.id}
 
@@ -83,10 +94,14 @@ async def login_user(user: UserLogin, db: AsyncSession):
         )
 
     if not db_user or not verify_password(user.password, str(db_user.password)):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
+        )
 
     if str(db_user.account_status) != "active":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account not active")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Account not active"
+        )
 
     return {
         "access_token": create_token(str(db_user.id)),
@@ -94,20 +109,30 @@ async def login_user(user: UserLogin, db: AsyncSession):
         "user_id": str(db_user.id),
     }
 
+
 async def refresh_access_token(token: str):
     try:
         payload = decode_token(token)
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired"
+        )
     except Exception:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to refresh token")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refresh token",
+        )
 
     if not payload.get("refresh"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type"
+        )
 
     user_id = payload.get("sub")
     if not isinstance(user_id, str) or not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+        )
 
     return {
         "access_token": create_token(user_id),

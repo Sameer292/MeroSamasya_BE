@@ -4,8 +4,19 @@ from datetime import datetime
 from .enum import RoleEnum, AccountStatusEnum
 import re
 
-FullName = Annotated[str, Field(min_length=2, max_length=50, pattern=r"^[a-zA-Z\s]+$", description="Letters and spaces only")]
-PhoneNumber = Annotated[str, Field(pattern=r"^[0-9]{10}$", description="Number must be 10 digits")]
+FullName = Annotated[
+    str,
+    Field(
+        min_length=2,
+        max_length=50,
+        pattern=r"^[a-zA-Z\s]+$",
+        description="Letters and spaces only",
+    ),
+]
+PhoneNumber = Annotated[
+    str, Field(pattern=r"^[0-9]{10}$", description="Number must be 10 digits")
+]
+
 
 class UserCreate(BaseModel):
     name: FullName
@@ -30,10 +41,12 @@ class UserCreate(BaseModel):
         if self.password != self.confirm_password:
             raise ValueError("Passwords do not match")
         return self
-    
+
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
 
 class UserResponse(BaseModel):
     id: str
@@ -50,14 +63,17 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class RegisterResponse(BaseModel):
     message: str
     user_id: str
+
 
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     user_id: str
+
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
