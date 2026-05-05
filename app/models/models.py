@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Text, Enum
 from app.core.database import Base
-from app.schemas.enum import RoleEnum, AccountStatusEnum
+from app.schemas.enum import AccountStatusEnum
 
 
 class User(Base):
@@ -13,11 +13,6 @@ class User(Base):
     name = Column(String, nullable=True)
     password = Column(String, nullable=False)
     phone = Column(String, nullable=True)
-    role = Column(
-        Enum(RoleEnum, name="user_role_enum", create_type=False),
-        nullable=False,
-        default=RoleEnum.citizen,
-    )
     profile_picture_url = Column(Text, nullable=True)
     account_status = Column(
         Enum(AccountStatusEnum, name="account_status_enum", create_type=False),
