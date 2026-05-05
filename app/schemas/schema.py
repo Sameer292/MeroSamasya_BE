@@ -11,10 +11,16 @@ FullName = Annotated[
         max_length=50,
         pattern=r"^[a-zA-Z\s]+$",
         description="Letters and spaces only",
+        examples=["Bishal Baniya"],
     ),
 ]
 PhoneNumber = Annotated[
-    str, Field(pattern=r"^[0-9]{10}$", description="Number must be 10 digits")
+    str,
+    Field(
+        pattern=r"^[0-9]{10}$",
+        description="Number must be 10 digits",
+        examples=["9800000000"],
+    ),
 ]
 
 
