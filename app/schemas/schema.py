@@ -48,11 +48,20 @@ class UserLogin(BaseModel):
     password: str
 
 
+class LocationResponse(BaseModel):
+    id: str
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
 class UserResponse(BaseModel):
     id: str
     email: EmailStr
     name: str
     phone: str
+    location: Optional[LocationResponse]
     role: RoleEnum
     profile_picture_url: Optional[str]
     account_status: AccountStatusEnum

@@ -1,8 +1,16 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Text, Enum
+from sqlalchemy import Column, String, DateTime, Text, Enum, ForeignKey
+from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.schemas.enum import RoleEnum, AccountStatusEnum
+
+class Location(Base):
+    __tablename__ = "Locations"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False, unique=True)
+    users = relationship("User", back_populates="location")
 
 
 class User(Base):
@@ -13,6 +21,8 @@ class User(Base):
     name = Column(String, nullable=True)
     password = Column(String, nullable=False)
     phone = Column(String, nullable=True)
+    location_id = Column(String, ForeignKey("Locations.id"), nullable=True)
+    location = relationship("Location", back_populates="users")
     role = Column(
         Enum(RoleEnum, name="user_role_enum", create_type=False),
         nullable=False,
