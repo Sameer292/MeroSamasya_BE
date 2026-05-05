@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.api import auth
+from app.api import auth_routes
 from app.core.database import engine, Base
 
 
@@ -29,4 +29,4 @@ def root():
     return {"message": "Working"}
 
 
-app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
