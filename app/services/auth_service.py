@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.models import User
+from app.models.models import User, Location
 from app.schemas.schema import UserCreate, UserLogin
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
@@ -139,3 +139,28 @@ async def refresh_access_token(token: str):
         "refresh_token": create_token(user_id, refresh=True),
         "user_id": user_id,
     }
+
+
+async def get_locations(db: AsyncSession):
+    try:
+        result = await db.execute(select(Location))
+        return result.scalars().all()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch locations",
+        )
+
+
+async def update_user_location(user: User, location_id: str, db: AsyncSession):
+    try:
+        user.location_id = location_id
+        await db.commit()
+        await db.refresh(user)
+    except Exception:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update location",
+        )
+    return user

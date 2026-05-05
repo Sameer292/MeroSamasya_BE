@@ -56,6 +56,10 @@ class LocationResponse(BaseModel):
         from_attributes = True
 
 
+class UpdateLocationRequest(BaseModel):
+    location_id: str
+
+
 class UserResponse(BaseModel):
     id: str
     email: EmailStr
