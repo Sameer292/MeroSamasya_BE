@@ -106,6 +106,15 @@ class IssueCreate(BaseModel):
     address: Optional[str] = None
 
 
+class IssueMediaResponse(BaseModel):
+    id: str
+    url: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class IssueResponse(BaseModel):
     id: str
     citizen_id: str
@@ -116,6 +125,7 @@ class IssueResponse(BaseModel):
     latitude: float
     longitude: float
     address: Optional[str]
+    media: list[IssueMediaResponse] = []
     created_at: datetime
     updated_at: datetime
     resolved_at: Optional[datetime]

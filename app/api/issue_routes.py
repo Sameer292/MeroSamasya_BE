@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, UploadFile, File, Form
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.schema import IssueCreate, IssueResponse, IssueListResponse
+from app.schemas.schema import IssueResponse, IssueListResponse
 from app.services.issue_service import (
     create_issue,
     get_my_issues,
@@ -9,18 +10,33 @@ from app.services.issue_service import (
 )
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
-from typing import Optional
 
 router = APIRouter()
 
 
-@router.post("", response_model=IssueResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=IssueResponse, status_code=status.HTTP_201_CREATED)
 async def open_issue(
-    data: IssueCreate,
+    category_id: str = Form(...),
+    title: str = Form(..., min_length=3, max_length=200),
+    description: Optional[str] = Form(None),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    address: Optional[str] = Form(None),
+    images: list[UploadFile] = File(default=[]),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await create_issue(data, current_user.id, db)
+    from app.schemas.schema import IssueCreate
+
+    data = IssueCreate(
+        category_id=category_id,
+        title=title,
+        description=description,
+        latitude=latitude,
+        longitude=longitude,
+        address=address,
+    )
+    return await create_issue(data, current_user.id, db, images)
 
 
 @router.get("/me", response_model=IssueListResponse, status_code=status.HTTP_200_OK)

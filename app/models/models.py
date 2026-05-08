@@ -1,9 +1,13 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, DateTime, Text, Enum, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.schemas.enum import AccountStatusEnum, IssueStatusEnum
+
+
+def utcnow():
+    return datetime.now(timezone.utc)
 
 
 class Location(Base):
@@ -30,9 +34,9 @@ class User(Base):
         nullable=False,
         default=AccountStatusEnum.active,
     )
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    deleted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
     issues = relationship("Issue", back_populates="citizen")
 
 
@@ -54,10 +58,24 @@ class Issue(Base):
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     address = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    resolved_at = Column(DateTime, nullable=True)
-    deleted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
     delete_reason = Column(Text, nullable=True)
 
     citizen = relationship("User", back_populates="issues")
+    media = relationship("IssueMedia", back_populates="issue", cascade="all, delete-orphan")
+
+
+class IssueMedia(Base):
+    __tablename__ = "IssueMedia"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    issue_id = Column(
+        String, ForeignKey("Issues.id", ondelete="CASCADE"), nullable=False
+    )
+    url = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    issue = relationship("Issue", back_populates="media")
