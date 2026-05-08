@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, field_validator, Field, model_validator
 from typing import Annotated, Optional
 from datetime import datetime
-from .enum import RoleEnum, AccountStatusEnum
+from .enum import AccountStatusEnum
 import re
 
 FullName = Annotated[
@@ -72,7 +72,6 @@ class UserResponse(BaseModel):
     name: str
     phone: str
     location: Optional[LocationResponse]
-    role: RoleEnum
     profile_picture_url: Optional[str]
     account_status: AccountStatusEnum
     created_at: datetime
