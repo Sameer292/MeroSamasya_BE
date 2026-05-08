@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Text, Enum, ForeignKey
+from sqlalchemy import Column, String, DateTime, Text, Enum, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from app.core.database import Base
-from app.schemas.enum import AccountStatusEnum
+from app.schemas.enum import AccountStatusEnum, IssueStatusEnum
+
 
 class Location(Base):
     __tablename__ = "Locations"
@@ -32,3 +33,31 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
+    issues = relationship("Issue", back_populates="citizen")
+
+
+class Issue(Base):
+    __tablename__ = "Issues"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    citizen_id = Column(
+        String, ForeignKey("Users.id", ondelete="SET NULL"), nullable=False
+    )
+    category_id = Column(String, nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(
+        Enum(IssueStatusEnum, name="issue_status_enum", create_type=False),
+        nullable=False,
+        default=IssueStatusEnum.open,
+    )
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    address = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
+    delete_reason = Column(Text, nullable=True)
+
+    citizen = relationship("User", back_populates="issues")

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.api import auth_routes
+from app.api.issue_routes import router as issue_router
 from app.core.database import engine, Base
 
 
@@ -30,3 +31,4 @@ def root():
 
 
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(issue_router, prefix="/api/issues", tags=["Issues"])

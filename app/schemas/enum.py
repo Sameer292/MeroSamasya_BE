@@ -6,3 +6,9 @@ class AccountStatusEnum(str, Enum):
     inactive = "inactive"
     suspended = "suspended"
     deleted = "deleted"
+
+
+class IssueStatusEnum(str, Enum):
+    open = "open"
+    in_progress = "in_progress"
+    resolved = "resolved"

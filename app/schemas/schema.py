@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, field_validator, Field, model_validator
 from typing import Annotated, Optional
 from datetime import datetime
-from .enum import AccountStatusEnum
+from .enum import AccountStatusEnum, IssueStatusEnum
 import re
 
 FullName = Annotated[
@@ -95,3 +95,35 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class IssueCreate(BaseModel):
+    category_id: str
+    title: str = Field(min_length=3, max_length=200)
+    description: Optional[str] = None
+    latitude: float
+    longitude: float
+    address: Optional[str] = None
+
+
+class IssueResponse(BaseModel):
+    id: str
+    citizen_id: str
+    category_id: str
+    title: str
+    description: Optional[str]
+    status: IssueStatusEnum
+    latitude: float
+    longitude: float
+    address: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    resolved_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class IssueListResponse(BaseModel):
+    total: int
+    issues: list[IssueResponse]
