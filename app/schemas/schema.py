@@ -11,10 +11,16 @@ FullName = Annotated[
         max_length=50,
         pattern=r"^[a-zA-Z\s]+$",
         description="Letters and spaces only",
+        examples=["Bishal Baniya"],
     ),
 ]
 PhoneNumber = Annotated[
-    str, Field(pattern=r"^[0-9]{10}$", description="Number must be 10 digits")
+    str,
+    Field(
+        pattern=r"^[0-9]{10}$",
+        description="Number must be 10 digits",
+        examples=["9800000000"],
+    ),
 ]
 
 
@@ -48,11 +54,24 @@ class UserLogin(BaseModel):
     password: str
 
 
+class LocationResponse(BaseModel):
+    id: str
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class UpdateLocationRequest(BaseModel):
+    location_id: str
+
+
 class UserResponse(BaseModel):
     id: str
     email: EmailStr
     name: str
     phone: str
+    location: Optional[LocationResponse]
     profile_picture_url: Optional[str]
     account_status: AccountStatusEnum
     created_at: datetime

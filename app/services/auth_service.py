@@ -10,6 +10,7 @@ from app.schemas.schema import UserCreate, UserLogin
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
 from email_validator import validate_email, EmailNotValidError
+from app.schemas.enum import AccountStatusEnum
 
 load_dotenv(".env")
 
@@ -98,7 +99,7 @@ async def login_user(user: UserLogin, db: AsyncSession):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
 
-    if str(db_user.account_status) != "active":
+    if db_user.account_status != AccountStatusEnum.active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Account not active"
         )
@@ -139,3 +140,5 @@ async def refresh_access_token(token: str):
         "refresh_token": create_token(user_id, refresh=True),
         "user_id": user_id,
     }
+
+

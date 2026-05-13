@@ -8,7 +8,11 @@ from app.schemas.schema import (
     RegisterResponse,
     UserResponse,
 )
-from app.services.auth_service import register_user, login_user, refresh_access_token
+from app.services.auth_service import (
+    register_user,
+    login_user,
+    refresh_access_token,
+)
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
 
