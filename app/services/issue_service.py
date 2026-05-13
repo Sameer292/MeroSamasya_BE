@@ -53,20 +53,16 @@ async def create_issue(
         await db.commit()
 
         result = await db.execute(
-            select(Issue)
-            .where(Issue.id == issue.id)
-            .options(selectinload(Issue.media))
+            select(Issue).where(Issue.id == issue.id).options(selectinload(Issue.media))
         )
         issue = result.scalar_one()
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(e)
+    except Exception:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create issue. Please try again.",
         )
+
     return issue
 
 
