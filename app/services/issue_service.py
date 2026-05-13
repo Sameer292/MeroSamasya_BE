@@ -46,7 +46,7 @@ async def create_issue(
 
         for image in images:
             file_bytes = await image.read()
-            url = upload_image(file_bytes, citizen_id, issue.id)
+            url = await upload_image(file_bytes, citizen_id, issue.id)
             media = IssueMedia(issue_id=issue.id, url=url)
             db.add(media)
 
