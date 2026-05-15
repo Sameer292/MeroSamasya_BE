@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.models import Issue, IssueMedia
+from app.models.models import Issue, IssueMedia, Category
 from app.schemas.schema import IssueCreate
 from fastapi import HTTPException, status, UploadFile
 from app.core.cloudinary import upload_image
@@ -160,3 +160,18 @@ async def delete_issue(
         )
 
     return {"message": "Issue deleted successfully.", "data": {"id": issue_id}}
+
+
+async def fetch_categories(db: AsyncSession):
+    try:
+        result = await db.execute(select(Category).where(Category.deleted_at.is_(None)))
+        categories = result.scalars().all()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch categories.",
+        )
+    return {
+        "message": "Categories fetched successfully",
+        "data": categories,
+    }

@@ -6,12 +6,14 @@ from app.schemas.schema import (
     IssueListResponse,
     IssueCreate,
     DeleteResponse,
+    CategoryListResponse,
 )
 from app.services.issue_service import (
     create_issue,
     get_my_issues,
     get_issue_by_id,
     delete_issue,
+    fetch_categories,
 )
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
@@ -71,3 +73,10 @@ async def remove_issue(
     db: AsyncSession = Depends(get_db),
 ):
     return await delete_issue(issue_id, current_user.id, delete_reason, db)
+
+
+@router.get(
+    "/categories/list", response_model=CategoryListResponse, status_code=status.HTTP_200_OK
+)
+async def get_categories(db: AsyncSession = Depends(get_db)):
+    return await fetch_categories(db)

@@ -111,6 +111,21 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+class CategoryResponse(BaseModel):
+    id: str
+    name: str
+    icon: str
+    color: str
+
+    class Config:
+        from_attributes = True
+
+
+class CategoryListResponse(BaseModel):
+    message: str
+    data: list[CategoryResponse]
+
+
 class IssueCreate(BaseModel):
     category_id: str
     title: str = Field(min_length=3, max_length=200)
@@ -124,16 +139,6 @@ class IssueMediaResponse(BaseModel):
     id: str
     url: str
     created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class CategoryResponse(BaseModel):
-    id: str
-    name: str
-    icon: str
-    color: str
 
     class Config:
         from_attributes = True
