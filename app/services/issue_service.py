@@ -53,7 +53,12 @@ async def create_issue(
         await db.commit()
 
         result = await db.execute(
-            select(Issue).where(Issue.id == issue.id).options(selectinload(Issue.media))
+            select(Issue)
+            .where(Issue.id == issue.id)
+            .options(
+                selectinload(Issue.media),
+                selectinload(Issue.category),
+            )
         )
         issue = result.scalar_one()
     except Exception:
@@ -73,8 +78,11 @@ async def get_my_issues(citizen_id: str, db: AsyncSession):
     try:
         result = await db.execute(
             select(Issue)
-           .where(Issue.citizen_id == citizen_id, Issue.deleted_at.is_(None))
-            .options(selectinload(Issue.media))
+            .where(Issue.citizen_id == citizen_id, Issue.deleted_at.is_(None))
+            .options(
+                selectinload(Issue.media),
+                selectinload(Issue.category),
+            )
             .order_by(Issue.created_at.desc())
         )
         issues = result.scalars().all()
@@ -98,7 +106,10 @@ async def get_issue_by_id(issue_id: str, db: AsyncSession):
         result = await db.execute(
             select(Issue)
             .where(Issue.id == issue_id, Issue.deleted_at.is_(None))
-            .options(selectinload(Issue.media))
+            .options(
+                selectinload(Issue.media),
+                selectinload(Issue.category),
+            )
         )
         issue = result.scalar_one_or_none()
     except Exception:
@@ -148,7 +159,4 @@ async def delete_issue(
             detail="Failed to delete issue.",
         )
 
-    return {
-    "message": "Issue deleted successfully.",
-    "data": {"id": issue_id}
-    }
+    return {"message": "Issue deleted successfully.", "data": {"id": issue_id}}

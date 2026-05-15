@@ -18,6 +18,17 @@ class Location(Base):
     users = relationship("User", back_populates="location")
 
 
+class Category(Base):
+    __tablename__ = "Categories"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False, unique=True)
+    icon = Column(String, nullable=False)
+    color = Column(String, nullable=False)
+    deleted_at = Column(DateTime, nullable=True)
+    issues = relationship("Issue", back_populates="category")
+
+
 class User(Base):
     __tablename__ = "Users"
 
@@ -45,9 +56,11 @@ class Issue(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     citizen_id = Column(
-        String, ForeignKey("Users.id", ondelete="SET NULL"), nullable=False
+        String, ForeignKey("Users.id", ondelete="SET NULL"), nullable=True
     )
-    category_id = Column(String, nullable=False)
+    category_id = Column(
+        String, ForeignKey("Categories.id", ondelete="SET NULL"), nullable=True
+    )
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     status = Column(
@@ -65,7 +78,10 @@ class Issue(Base):
     delete_reason = Column(Text, nullable=True)
 
     citizen = relationship("User", back_populates="issues")
-    media = relationship("IssueMedia", back_populates="issue", cascade="all, delete-orphan")
+    category = relationship("Category", back_populates="issues")
+    media = relationship(
+        "IssueMedia", back_populates="issue", cascade="all, delete-orphan"
+    )
 
 
 class IssueMedia(Base):

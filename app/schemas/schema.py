@@ -129,10 +129,20 @@ class IssueMediaResponse(BaseModel):
         from_attributes = True
 
 
+class CategoryResponse(BaseModel):
+    id: str
+    name: str
+    icon: str
+    color: str
+
+    class Config:
+        from_attributes = True
+
+
 class IssueData(BaseModel):
     id: str
-    citizen_id: str
-    category_id: str
+    citizen_id: Optional[str] = None
+    category: Optional[CategoryResponse] = None
     title: str
     description: Optional[str] = None
     status: IssueStatusEnum
