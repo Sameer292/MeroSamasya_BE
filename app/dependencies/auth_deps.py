@@ -30,7 +30,10 @@ async def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
             )
-        return user
+        return {
+         "message": "User fetched successfully",
+         "data": user
+}
     except HTTPException:
         raise
     except jwt.ExpiredSignatureError:
