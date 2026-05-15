@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends, status, UploadFile, File, Form
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.schema import IssueResponse, IssueListResponse, IssueCreate
+from app.schemas.schema import (
+    IssueResponse,
+    IssueListResponse,
+    IssueCreate,
+    DeleteResponse,
+)
 from app.services.issue_service import (
     create_issue,
     get_my_issues,
@@ -56,7 +61,9 @@ async def issue_detail(
     return await get_issue_by_id(issue_id, db)
 
 
-@router.delete("/{issue_id}", status_code=status.HTTP_200_OK)
+@router.delete(
+    "/{issue_id}", response_model=DeleteResponse, status_code=status.HTTP_200_OK
+)
 async def remove_issue(
     issue_id: str,
     delete_reason: Optional[str] = None,

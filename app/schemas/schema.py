@@ -66,31 +66,45 @@ class UpdateLocationRequest(BaseModel):
     location_id: str
 
 
-class UserResponse(BaseModel):
+class UserData(BaseModel):
     id: str
     email: EmailStr
-    name: str
-    phone: str
-    location: Optional[LocationResponse]
-    profile_picture_url: Optional[str]
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[LocationResponse] = None
+    profile_picture_url: Optional[str] = None
     account_status: AccountStatusEnum
     created_at: datetime
     updated_at: datetime
-    deleted_at: Optional[datetime]
+    deleted_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
+class UserResponse(BaseModel):
+    message: str
+    data: UserData
+
+
+class RegisterData(BaseModel):
+    user_id: str
+
+
 class RegisterResponse(BaseModel):
     message: str
+    data: RegisterData
+
+
+class TokenData(BaseModel):
+    access_token: str
+    refresh_token: str
     user_id: str
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    user_id: str
+    message: str
+    data: TokenData
 
 
 class RefreshTokenRequest(BaseModel):
@@ -115,25 +129,49 @@ class IssueMediaResponse(BaseModel):
         from_attributes = True
 
 
-class IssueResponse(BaseModel):
+class IssueData(BaseModel):
     id: str
     citizen_id: str
     category_id: str
     title: str
-    description: Optional[str]
+    description: Optional[str] = None
     status: IssueStatusEnum
     latitude: float
     longitude: float
-    address: Optional[str]
+    address: Optional[str] = None
     media: list[IssueMediaResponse] = []
     created_at: datetime
     updated_at: datetime
-    resolved_at: Optional[datetime]
+    resolved_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
-class IssueListResponse(BaseModel):
+class IssueResponse(BaseModel):
+    message: str
+    data: IssueData
+
+
+class IssueListData(BaseModel):
     total: int
-    issues: list[IssueResponse]
+    issues: list[IssueData]
+
+
+class IssueListResponse(BaseModel):
+    message: str
+    data: IssueListData
+
+
+class LocationListResponse(BaseModel):
+    message: str
+    data: list[LocationResponse]
+
+
+class DeleteData(BaseModel):
+    id: str
+
+
+class DeleteResponse(BaseModel):
+    message: str
+    data: DeleteData

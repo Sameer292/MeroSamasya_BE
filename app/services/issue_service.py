@@ -63,14 +63,17 @@ async def create_issue(
             detail="Failed to create issue. Please try again.",
         )
 
-    return issue
+    return {
+        "message": "Issue created successfully",
+        "data": issue,
+    }
 
 
 async def get_my_issues(citizen_id: str, db: AsyncSession):
     try:
         result = await db.execute(
             select(Issue)
-            .where(Issue.citizen_id == citizen_id, Issue.deleted_at == None)
+           .where(Issue.citizen_id == citizen_id, Issue.deleted_at.is_(None))
             .options(selectinload(Issue.media))
             .order_by(Issue.created_at.desc())
         )
@@ -80,14 +83,21 @@ async def get_my_issues(citizen_id: str, db: AsyncSession):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch issues.",
         )
-    return {"total": len(issues), "issues": issues}
+
+    return {
+        "message": "Issues fetched successfully",
+        "data": {
+            "total": len(issues),
+            "issues": issues,
+        },
+    }
 
 
 async def get_issue_by_id(issue_id: str, db: AsyncSession):
     try:
         result = await db.execute(
             select(Issue)
-            .where(Issue.id == issue_id, Issue.deleted_at == None)
+            .where(Issue.id == issue_id, Issue.deleted_at.is_(None))
             .options(selectinload(Issue.media))
         )
         issue = result.scalar_one_or_none()
@@ -96,18 +106,24 @@ async def get_issue_by_id(issue_id: str, db: AsyncSession):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch issue.",
         )
+
     if not issue:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Issue not found.",
         )
-    return issue
+
+    return {
+        "message": "Issue fetched successfully",
+        "data": issue,
+    }
 
 
 async def delete_issue(
     issue_id: str, citizen_id: str, delete_reason: str | None, db: AsyncSession
 ):
-    issue = await get_issue_by_id(issue_id, db)
+    issue_response = await get_issue_by_id(issue_id, db)
+    issue = issue_response["data"]
 
     if issue.citizen_id != citizen_id:
         raise HTTPException(
@@ -131,4 +147,8 @@ async def delete_issue(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete issue.",
         )
-    return {"message": "Issue deleted successfully."}
+
+    return {
+    "message": "Issue deleted successfully.",
+    "data": {"id": issue_id}
+    }
