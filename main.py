@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.api import auth_routes
-from app.api.issue_routes import router as issue_router
+from app.api.auth_routes import router as auth_routes
+from app.api.issue_routes import router as issue_routes
+from app.api.location_routes import router as location_routes
 from app.core.database import engine, Base
 
 
@@ -30,5 +31,6 @@ def root():
     return {"message": "Working"}
 
 
-app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(issue_router, prefix="/api/issues", tags=["Issues"])
+app.include_router(auth_routes, prefix="/api/auth", tags=["Authentication"])
+app.include_router(issue_routes, prefix="/api/issues", tags=["Issues"])
+app.include_router(location_routes, prefix="/api/location", tags=["Location"])

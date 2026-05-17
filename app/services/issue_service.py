@@ -61,7 +61,10 @@ async def create_issue(
             )
         )
         issue = result.scalar_one()
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(e)
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -139,13 +142,13 @@ async def delete_issue(
     if issue.citizen_id != citizen_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Failed to delete this issue.",
+            detail="You are not allowed to delete this issue.",
         )
 
     if issue.status != IssueStatusEnum.open:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Issue cannot be deleted.",
+            detail="Only open issues can be deleted.",
         )
 
     try:
@@ -171,6 +174,7 @@ async def fetch_categories(db: AsyncSession):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch categories.",
         )
+
     return {
         "message": "Categories fetched successfully",
         "data": categories,

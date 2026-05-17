@@ -54,12 +54,17 @@ class UserLogin(BaseModel):
     password: str
 
 
-class LocationResponse(BaseModel):
+class LocationSchema(BaseModel):
     id: str
     name: str
 
     class Config:
         from_attributes = True
+
+
+class LocationResponse(BaseModel):
+    message: str
+    data: list[LocationSchema]
 
 
 class UpdateLocationRequest(BaseModel):
@@ -71,7 +76,7 @@ class UserData(BaseModel):
     email: EmailStr
     name: Optional[str] = None
     phone: Optional[str] = None
-    location: Optional[LocationResponse] = None
+    location: Optional[LocationSchema] = None
     profile_picture_url: Optional[str] = None
     account_status: AccountStatusEnum
     created_at: datetime

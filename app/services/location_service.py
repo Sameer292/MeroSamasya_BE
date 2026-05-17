@@ -18,18 +18,28 @@ async def get_locations(db: AsyncSession):
             detail="Failed to fetch locations",
         )
 
-
 async def update_user_location(user: User, location_id: str, db: AsyncSession):
+    location_result = await db.execute(select(Location).where(Location.id == location_id))
+    if not location_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Location not found.",
+        )
+
+    user_id = str(user.id)
+
     try:
-        user.location_id = location_id
+        await db.execute(
+            User.__table__.update().where(User.id == user_id).values(location_id=location_id)
+        )
         await db.commit()
+        db.expire_all()
         result = await db.execute(
-            select(User)
-            .where(User.id == user.id)
-            .options(selectinload(User.location))
+            select(User).where(User.id == user_id).options(selectinload(User.location))
         )
         updated_user = result.scalar_one_or_none()
-    except Exception:
+    except Exception as e:
+        print(e)
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
