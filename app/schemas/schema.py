@@ -132,12 +132,12 @@ class CategoryListResponse(BaseModel):
 
 
 class IssueCreate(BaseModel):
-    category_id: str
+    category_id: str = Field(min_length=1)
     title: str = Field(min_length=3, max_length=200)
-    description: Optional[str] = None
+    description: str = Field(min_length=5)
     latitude: float
     longitude: float
-    address: Optional[str] = None
+    address: str = Field(min_length=1)
 
 
 class IssueMediaResponse(BaseModel):

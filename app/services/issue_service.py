@@ -18,6 +18,12 @@ async def create_issue(
     db: AsyncSession,
     images: list[UploadFile] = [],
 ):
+    if len(images) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please upload at least 1 image.",
+        )
+
     if len(images) > MAX_IMAGES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
