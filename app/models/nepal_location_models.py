@@ -1,7 +1,8 @@
 from sqlalchemy import Column, Integer, String, UniqueConstraint, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from app.core.database import Base
-from enum import Enum as PyEnum
+
+from app.schemas.enum import LocalLevelType
 
 
 class Province(Base):
@@ -42,13 +43,6 @@ class District(Base):
         back_populates="district",
         cascade="all, delete",
     )
-
-
-class LocalLevelType(PyEnum):
-    MA_NA_PA = "Ma.Na.Pa."
-    UPA_MA = "Upa.Ma."
-    NA_PA = "Na.Pa."
-    GA_PA = "Ga.Pa."
 
 
 class LocalLevel(Base):

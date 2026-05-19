@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.services.nepal_location_service import seed_locations
-from app.schemas.nepal_location_schems import (
+from app.schemas.nepal_location_schemas import (
     DistrictResponse,
     LocalLevelResponse,
     ProvinceResponse,
@@ -68,7 +68,7 @@ async def get_local_levels(
     query = select(LocalLevel).where(LocalLevel.district_id == district_id)
 
     if local_level_type:
-        query = query.filter(LocalLevel.type == local_level_type)
+        query = query.where(LocalLevel.type == local_level_type)
     res = await db.execute(query)
 
     return res.scalars().all()

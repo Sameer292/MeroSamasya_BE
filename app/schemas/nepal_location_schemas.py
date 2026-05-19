@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.schemas.enum import LocalLevelType
+
 
 class ProvinceResponse(BaseModel):
     id: int
@@ -20,7 +22,7 @@ class DistrictResponse(BaseModel):
 class LocalLevelResponse(BaseModel):
     id: int
     name: str
-    type: str
+    type: LocalLevelType
 
     class Config:
         from_attributes = True
