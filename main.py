@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.api import auth_routes
+from app.api import all_nepal_location_routes
 from app.core.database import engine, Base
 
 
@@ -30,3 +31,8 @@ def root():
 
 
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(
+    all_nepal_location_routes.router,
+    prefix="/api/nepal",
+    tags=["Nepal Location"],
+)
