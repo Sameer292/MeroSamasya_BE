@@ -53,7 +53,6 @@ async def get_districts(
     districts = districts_result.scalars().all()
     if not districts:
         return []
-    print(districts)
     return districts
 
 
