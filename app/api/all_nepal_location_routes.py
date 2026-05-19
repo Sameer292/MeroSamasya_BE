@@ -62,13 +62,13 @@ async def get_districts(
 )
 async def get_local_levels(
     district_id: int,
-    type: LocalLevelType | None = None,
+    local_level_type: LocalLevelType | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     query = select(LocalLevel).where(LocalLevel.district_id == district_id)
 
-    if type:
-        query = query.filter(LocalLevel.type == type)
+    if local_level_type:
+        query = query.filter(LocalLevel.type == local_level_type)
     res = await db.execute(query)
 
     return res.scalars().all()
