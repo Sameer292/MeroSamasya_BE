@@ -47,10 +47,10 @@ async def get_districts(
     province_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    discticts = await db.execute(
+    districts_result = await db.execute(
         select(District).where(District.province_id == province_id)
     )
-    districts = discticts.scalars().all()
+    districts = districts_result.scalars().all()
     if not districts:
         return []
     print(districts)
