@@ -7,6 +7,7 @@ from app.schemas.schema import (
     IssueCreate,
     DeleteResponse,
     CategoryListResponse,
+    IssueUpdate
 )
 from app.services.issue_service import (
     create_issue,
@@ -14,6 +15,7 @@ from app.services.issue_service import (
     get_issue_by_id,
     delete_issue,
     fetch_categories,
+    update_issue
 )
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
@@ -75,8 +77,36 @@ async def remove_issue(
     return await delete_issue(issue_id, current_user.id, delete_reason, db)
 
 
+@router.patch(
+    "/{issue_id}", response_model=IssueResponse, status_code=status.HTTP_200_OK
+)
+async def edit_issue(
+    issue_id: str,
+    category_id: Optional[str] = Form(None),
+    title: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
+    address: Optional[str] = Form(None),
+    images: list[UploadFile] = File(default=[]),
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    data = IssueUpdate(
+        category_id=category_id,
+        title=title,
+        description=description,
+        latitude=latitude,
+        longitude=longitude,
+        address=address,
+    )
+    return await update_issue(issue_id, current_user.id, data, db, images)
+
+
 @router.get(
-    "/categories/list", response_model=CategoryListResponse, status_code=status.HTTP_200_OK
+    "/categories/list",
+    response_model=CategoryListResponse,
+    status_code=status.HTTP_200_OK,
 )
 async def get_categories(db: AsyncSession = Depends(get_db)):
     return await fetch_categories(db)

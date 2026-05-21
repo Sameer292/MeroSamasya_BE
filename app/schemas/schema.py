@@ -140,6 +140,15 @@ class IssueCreate(BaseModel):
     address: str = Field(min_length=1)
 
 
+class IssueUpdate(BaseModel):
+    category_id: Optional[str] = None
+    title: Optional[str] = Field(None, min_length=3, max_length=200)
+    description: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    address: Optional[str] = None
+
+
 class IssueMediaResponse(BaseModel):
     id: str
     url: str
