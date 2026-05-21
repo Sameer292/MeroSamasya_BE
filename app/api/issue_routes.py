@@ -3,11 +3,11 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.schema import (
     IssueResponse,
-    IssueListResponse,
     IssueCreate,
     DeleteResponse,
     CategoryListResponse,
-    IssueUpdate
+    IssueUpdate,
+    PaginatedIssueResponse,
 )
 from app.services.issue_service import (
     create_issue,
@@ -15,7 +15,9 @@ from app.services.issue_service import (
     get_issue_by_id,
     delete_issue,
     fetch_categories,
-    update_issue
+    update_issue,
+    get_all_issues,
+    get_issues_by_location,
 )
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
@@ -49,12 +51,48 @@ async def open_issue(
     return await create_issue(data, current_user.id, db, images)
 
 
-@router.get("/me", response_model=IssueListResponse, status_code=status.HTTP_200_OK)
+@router.get("/me", response_model=PaginatedIssueResponse, status_code=status.HTTP_200_OK)
 async def my_issues(
+    page: int = 1,
+    limit: int = 10,
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_my_issues(current_user.id, db)
+    return await get_my_issues(current_user.id, page, limit, db)
+
+
+@router.get(
+    "/categories/list",
+    response_model=CategoryListResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_categories(db: AsyncSession = Depends(get_db)):
+    return await fetch_categories(db)
+
+
+@router.get(
+    "/all", response_model=PaginatedIssueResponse, status_code=status.HTTP_200_OK
+)
+async def all_issues(
+    page: int = 1,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_all_issues(page, limit, db)
+
+
+@router.get(
+    "/user/location",
+    response_model=PaginatedIssueResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def issues_by_location(
+    page: int = 1,
+    limit: int = 10,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_issues_by_location(current_user.location_id, page, limit, db)
 
 
 @router.get("/{issue_id}", response_model=IssueResponse, status_code=status.HTTP_200_OK)
@@ -101,12 +139,3 @@ async def edit_issue(
         address=address,
     )
     return await update_issue(issue_id, current_user.id, data, db, images)
-
-
-@router.get(
-    "/categories/list",
-    response_model=CategoryListResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def get_categories(db: AsyncSession = Depends(get_db)):
-    return await fetch_categories(db)

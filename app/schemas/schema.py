@@ -187,11 +187,6 @@ class IssueListData(BaseModel):
     issues: list[IssueData]
 
 
-class IssueListResponse(BaseModel):
-    message: str
-    data: IssueListData
-
-
 class LocationListResponse(BaseModel):
     message: str
     data: list[LocationResponse]
@@ -204,3 +199,20 @@ class DeleteData(BaseModel):
 class DeleteResponse(BaseModel):
     message: str
     data: DeleteData
+
+
+class PaginationMeta(BaseModel):
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+class PaginatedIssueData(BaseModel):
+    meta: PaginationMeta
+    issues: list[IssueData]
+
+
+class PaginatedIssueResponse(BaseModel):
+    message: str
+    data: PaginatedIssueData

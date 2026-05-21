@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.models import Issue, IssueMedia, Category
+from app.models.models import Issue, IssueMedia, Category, User
 from app.schemas.schema import IssueCreate, IssueUpdate
 from fastapi import HTTPException, status, UploadFile
 from app.core.cloudinary import upload_image
 from app.schemas.enum import IssueStatusEnum
+import math
 
 MAX_IMAGES = 3
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
@@ -83,8 +84,17 @@ async def create_issue(
     }
 
 
-async def get_my_issues(citizen_id: str, db: AsyncSession):
+async def get_my_issues(citizen_id: str, page: int, limit: int, db: AsyncSession):
     try:
+        offset = (page - 1) * limit
+
+        count_result = await db.execute(
+            select(func.count(Issue.id)).where(
+                Issue.citizen_id == citizen_id, Issue.deleted_at.is_(None)
+            )
+        )
+        total = count_result.scalar()
+
         result = await db.execute(
             select(Issue)
             .where(Issue.citizen_id == citizen_id, Issue.deleted_at.is_(None))
@@ -93,6 +103,8 @@ async def get_my_issues(citizen_id: str, db: AsyncSession):
                 selectinload(Issue.category),
             )
             .order_by(Issue.created_at.desc())
+            .offset(offset)
+            .limit(limit)
         )
         issues = result.scalars().all()
     except Exception:
@@ -104,7 +116,12 @@ async def get_my_issues(citizen_id: str, db: AsyncSession):
     return {
         "message": "Issues fetched successfully",
         "data": {
-            "total": len(issues),
+            "meta": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "total_pages": math.ceil(total / limit),
+            },
             "issues": issues,
         },
     }
@@ -271,4 +288,99 @@ async def update_issue(
     return {
         "message": "Issue updated successfully",
         "data": updated_issue,
+    }
+
+
+async def get_all_issues(page: int, limit: int, db: AsyncSession):
+    try:
+        offset = (page - 1) * limit
+
+        count_result = await db.execute(
+            select(func.count(Issue.id)).where(Issue.deleted_at.is_(None))
+        )
+        total = count_result.scalar()
+        print(f"Total issues: {total}")  # ← add this
+        print(f"Offset: {offset}, Limit: {limit}")  # ← add this
+        result = await db.execute(
+            select(Issue)
+            .where(Issue.deleted_at.is_(None))
+            .options(
+                selectinload(Issue.media),
+                selectinload(Issue.category),
+            )
+            .order_by(Issue.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        issues = result.scalars().all()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch issues.",
+        )
+
+    return {
+        "message": "Issues fetched successfully",
+        "data": {
+            "meta": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "total_pages": math.ceil(total / limit),
+            },
+            "issues": issues,
+        },
+    }
+
+
+async def get_issues_by_location(
+    location_id: str | None, page: int, limit: int, db: AsyncSession
+):
+    if not location_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User has no location set.",
+        )
+    try:
+        offset = (page - 1) * limit
+
+        count_result = await db.execute(
+            select(func.count(Issue.id))
+            .join(User, User.id == Issue.citizen_id)
+            .where(Issue.deleted_at.is_(None), User.location_id == location_id)
+        )
+        total = count_result.scalar()
+
+        result = await db.execute(
+            select(Issue)
+            .join(User, User.id == Issue.citizen_id)
+            .where(Issue.deleted_at.is_(None), User.location_id == location_id)
+            .options(
+                selectinload(Issue.media),
+                selectinload(Issue.category),
+            )
+            .order_by(Issue.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        issues = result.scalars().all()
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch issues.",
+        )
+
+    return {
+        "message": "Issues fetched successfully",
+        "data": {
+            "meta": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "total_pages": math.ceil(total / limit),
+            },
+            "issues": issues,
+        },
     }
