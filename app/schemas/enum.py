@@ -13,3 +13,10 @@ class IssueStatusEnum(str, Enum):
     in_progress = "in_progress"
     resolved = "resolved"
     closed = "closed"
+
+
+class LocalLevelType(Enum):
+    MA_NA_PA = "Ma.Na.Pa."
+    UPA_MA = "Upa.Ma."
+    NA_PA = "Na.Pa."
+    GA_PA = "Ga.Pa."
