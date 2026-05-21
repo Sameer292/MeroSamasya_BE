@@ -62,7 +62,7 @@ async def my_issues(
 
 
 @router.get(
-    "/categories/list",
+    "/categories",
     response_model=CategoryListResponse,
     status_code=status.HTTP_200_OK,
 )
@@ -82,7 +82,7 @@ async def all_issues(
 
 
 @router.get(
-    "/user/location",
+    "/nearme",
     response_model=PaginatedIssueResponse,
     status_code=status.HTTP_200_OK,
 )
