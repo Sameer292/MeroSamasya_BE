@@ -95,3 +95,44 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class CategoryCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    icon: str = Field(min_length=1)
+    color: str = Field(min_length=4, max_length=7)
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    icon: Optional[str] = None
+    color: Optional[str] = Field(None, min_length=4, max_length=7)
+
+
+class CategoryData(BaseModel):
+    id: str
+    name: str
+    icon: str
+    color: str
+
+    class Config:
+        from_attributes = True
+
+
+class CategoryResponse(BaseModel):
+    message: str
+    data: CategoryData
+
+
+class CategoryListResponse(BaseModel):
+    message: str
+    data: list[CategoryData]
+
+
+class DeleteData(BaseModel):
+    id: str
+
+
+class DeleteResponse(BaseModel):
+    message: str
+    data: DeleteData

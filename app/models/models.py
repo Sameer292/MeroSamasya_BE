@@ -12,6 +12,15 @@ class Location(Base):
     name = Column(String, nullable=False, unique=True)
     users = relationship("User", back_populates="location")
 
+class Category(Base):
+    __tablename__ = "Categories"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False, unique=True)
+    icon = Column(String, nullable=False)
+    color = Column(String, nullable=False)
+    deleted_at = Column(DateTime, nullable=True)
+    # issues = relationship("Issue", back_populates="category")
 
 class User(Base):
     __tablename__ = "Users"
