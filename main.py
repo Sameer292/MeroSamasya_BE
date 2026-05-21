@@ -8,6 +8,7 @@ from app.api import (
     admin_subscriber_routes,
     all_nepal_location_routes,
     auth_routes,
+    category_routes,
     issue_routes,
     location_routes,
 )
@@ -63,3 +64,5 @@ app.include_router(location_routes.router, prefix="/api/location", tags=["Locati
 app.include_router(
     all_nepal_location_routes.router, prefix="/api/nepal", tags=["Nepal Location"]
 )
+
+app.include_router(category_routes.router, prefix="/api/category", tags=["Category"])

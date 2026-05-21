@@ -111,7 +111,19 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
-class CategoryResponse(BaseModel):
+class CategoryCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    icon: str = Field(min_length=1)
+    color: str = Field(min_length=4, max_length=7)
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    icon: Optional[str] = None
+    color: Optional[str] = Field(None, min_length=4, max_length=7)
+
+
+class CategoryData(BaseModel):
     id: str
     name: str
     icon: str
@@ -121,9 +133,14 @@ class CategoryResponse(BaseModel):
         from_attributes = True
 
 
+class CategoryResponse(BaseModel):
+    message: str
+    data: CategoryData
+
+
 class CategoryListResponse(BaseModel):
     message: str
-    data: list[CategoryResponse]
+    data: list[CategoryData]
 
 
 class IssueCreate(BaseModel):
@@ -156,7 +173,7 @@ class IssueMediaResponse(BaseModel):
 class IssueData(BaseModel):
     id: str = Field(description="Stable issue UUID used in URLs and as the displayed reference.")
     citizen_id: Optional[str] = None
-    category: Optional[CategoryResponse] = None
+    category: Optional[CategoryData] = None
     title: str
     description: Optional[str] = None
     status: IssueStatusEnum
