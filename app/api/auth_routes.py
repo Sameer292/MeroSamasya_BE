@@ -21,7 +21,10 @@ router = APIRouter()
 
 @router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
 async def get_me(current_user=Depends(get_current_user)):
-    return current_user
+    return {
+        "message": "User fetched successfully",
+        "data": current_user
+    }
 
 
 @router.post(

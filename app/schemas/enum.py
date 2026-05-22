@@ -8,6 +8,13 @@ class AccountStatusEnum(str, Enum):
     deleted = "deleted"
 
 
+class IssueStatusEnum(str, Enum):
+    open = "open"
+    in_progress = "in_progress"
+    resolved = "resolved"
+    closed = "closed"
+
+
 class LocalLevelType(Enum):
     MA_NA_PA = "Ma.Na.Pa."
     UPA_MA = "Upa.Ma."

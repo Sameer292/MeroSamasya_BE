@@ -1,7 +1,12 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.api import auth_routes
-from app.api import all_nepal_location_routes, category_routes
+from app.api import (
+    all_nepal_location_routes,
+    auth_routes,
+    issue_routes,
+    location_routes,
+    category_routes,
+)
 from app.core.database import engine, Base
 
 
@@ -31,9 +36,9 @@ def root():
 
 
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(issue_routes.router, prefix="/api/issues", tags=["Issues"])
+app.include_router(location_routes.router, prefix="/api/location", tags=["Location"])
 app.include_router(
-    all_nepal_location_routes.router,
-    prefix="/api/nepal",
-    tags=["Nepal Location"],
+    all_nepal_location_routes.router, prefix="/api/nepal", tags=["Nepal Location"]
 )
 app.include_router(category_routes.router, prefix="/api/category", tags=["Category"])

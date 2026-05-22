@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, field_validator, Field, model_validator
 from typing import Annotated, Optional
 from datetime import datetime
-from .enum import AccountStatusEnum
+from .enum import AccountStatusEnum, IssueStatusEnum
 import re
 
 FullName = Annotated[
@@ -54,43 +54,62 @@ class UserLogin(BaseModel):
     password: str
 
 
-class LocationResponse(BaseModel):
+class LocationSchema(BaseModel):
     id: str
     name: str
 
     class Config:
         from_attributes = True
+
+
+class LocationResponse(BaseModel):
+    message: str
+    data: list[LocationSchema]
 
 
 class UpdateLocationRequest(BaseModel):
     location_id: str
 
 
-class UserResponse(BaseModel):
+class UserData(BaseModel):
     id: str
     email: EmailStr
-    name: str
-    phone: str
-    location: Optional[LocationResponse]
-    profile_picture_url: Optional[str]
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[LocationSchema] = None
+    profile_picture_url: Optional[str] = None
     account_status: AccountStatusEnum
     created_at: datetime
     updated_at: datetime
-    deleted_at: Optional[datetime]
+    deleted_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
+class UserResponse(BaseModel):
+    message: str
+    data: UserData
+
+
+class RegisterData(BaseModel):
+    user_id: str
+
+
 class RegisterResponse(BaseModel):
     message: str
+    data: RegisterData
+
+
+class TokenData(BaseModel):
+    access_token: str
+    refresh_token: str
     user_id: str
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    user_id: str
+    message: str
+    data: TokenData
 
 
 class RefreshTokenRequest(BaseModel):
@@ -129,6 +148,67 @@ class CategoryListResponse(BaseModel):
     data: list[CategoryData]
 
 
+class IssueMediaResponse(BaseModel):
+    id: str
+    url: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class IssueData(BaseModel):
+    id: str
+    citizen_id: Optional[str] = None
+    category: Optional[CategoryData] = None
+    title: str
+    description: Optional[str] = None
+    status: IssueStatusEnum
+    latitude: float
+    longitude: float
+    address: Optional[str] = None
+    media: list[IssueMediaResponse] = []
+    created_at: datetime
+    updated_at: datetime
+    resolved_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class IssueCreate(BaseModel):
+    category_id: str = Field(min_length=1)
+    title: str = Field(min_length=3, max_length=200)
+    description: str = Field(min_length=5)
+    latitude: float
+    longitude: float
+    address: str = Field(min_length=1)
+
+
+class IssueUpdate(BaseModel):
+    category_id: Optional[str] = None
+    title: Optional[str] = Field(None, min_length=3, max_length=200)
+    description: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    address: Optional[str] = None
+
+
+class IssueResponse(BaseModel):
+    message: str
+    data: IssueData
+
+
+class IssueListData(BaseModel):
+    total: int
+    issues: list[IssueData]
+
+
+class IssueListResponse(BaseModel):
+    message: str
+    data: IssueListData
+
+
 class DeleteData(BaseModel):
     id: str
 
@@ -136,3 +216,25 @@ class DeleteData(BaseModel):
 class DeleteResponse(BaseModel):
     message: str
     data: DeleteData
+
+
+class PaginationMeta(BaseModel):
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
+class PaginatedIssueData(BaseModel):
+    meta: PaginationMeta
+    issues: list[IssueData]
+
+
+class PaginatedIssueResponse(BaseModel):
+    message: str
+    data: PaginatedIssueData
+
+
+class LocationListResponse(BaseModel):
+    message: str
+    data: list[LocationSchema]
