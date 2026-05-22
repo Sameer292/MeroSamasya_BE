@@ -61,6 +61,10 @@ class LocationSchema(BaseModel):
     class Config:
         from_attributes = True
 
+class LocationResponse(BaseModel):
+    message: str
+    data: list[LocationSchema]
+
 
 class UserData(BaseModel):
     id: str
