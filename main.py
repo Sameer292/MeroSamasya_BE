@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from app.api import auth_routes
 from app.api import all_nepal_location_routes
 from app.core.database import engine, Base
+from app.api.profile_routes import router as profile_router
 
 
 @asynccontextmanager
@@ -36,3 +37,5 @@ app.include_router(
     prefix="/api/nepal",
     tags=["Nepal Location"],
 )
+app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
+

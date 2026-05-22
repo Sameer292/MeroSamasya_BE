@@ -62,10 +62,6 @@ class LocationResponse(BaseModel):
         from_attributes = True
 
 
-class UpdateLocationRequest(BaseModel):
-    location_id: str
-
-
 class UserResponse(BaseModel):
     id: str
     email: EmailStr
@@ -95,3 +91,10 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class UpdateProfileRequest(BaseModel):
+    name: Optional[FullName] = None
+    phone: Optional[PhoneNumber] = None
+    location_id: Optional[str] = None
+    profile_picture_url: Optional[str] = None
