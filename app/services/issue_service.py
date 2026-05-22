@@ -12,6 +12,7 @@ import math
 MAX_IMAGES = 3
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
 
+
 async def create_issue(
     data: IssueCreate,
     citizen_id: str,

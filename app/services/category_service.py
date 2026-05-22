@@ -8,20 +8,30 @@ CATEGORIES = [
     {"name": "Roads & Transport", "icon": "ri-route-fill", "color": "#F59E0B"},
     {"name": "Water & Drainage", "icon": "ri-drop-fill", "color": "#3B82F6"},
     {"name": "Waste & Sanitation", "icon": "ri-delete-bin-fill", "color": "#16A34A"},
-    {"name": "Electricity & Utilities", "icon": "ri-flashlight-fill", "color": "#EAB308"},
-    {"name": "Public Safety & Health", "icon": "ri-alarm-warning-fill", "color": "#DC2626"},
+    {
+        "name": "Electricity & Utilities",
+        "icon": "ri-flashlight-fill",
+        "color": "#EAB308",
+    },
+    {
+        "name": "Public Safety & Health",
+        "icon": "ri-alarm-warning-fill",
+        "color": "#DC2626",
+    },
     {"name": "Environment & Nature", "icon": "ri-tree-fill", "color": "#10B981"},
     {"name": "Public Infrastructure", "icon": "ri-building-2-fill", "color": "#4B5563"},
-    {"name": "Civic Services & Feedback", "icon": "ri-file-list-3-fill", "color": "#6366F1"},
+    {
+        "name": "Civic Services & Feedback",
+        "icon": "ri-file-list-3-fill",
+        "color": "#6366F1",
+    },
     {"name": "Other", "icon": "ri-tools-fill", "color": "#64748B"},
 ]
 
 
 async def get_categories(db: AsyncSession):
     try:
-        result = await db.execute(
-            select(Category)
-        )
+        result = await db.execute(select(Category))
         categories = result.scalars().all()
     except Exception as e:
         print(f"SEED ERROR: {e}")
@@ -36,9 +46,7 @@ async def get_categories(db: AsyncSession):
 
 
 async def create_category(data: CategoryCreate, db: AsyncSession):
-    existing = await db.execute(
-        select(Category).where(Category.name == data.name)
-    )
+    existing = await db.execute(select(Category).where(Category.name == data.name))
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -68,9 +76,7 @@ async def create_category(data: CategoryCreate, db: AsyncSession):
 
 
 async def update_category(category_id: str, data: CategoryUpdate, db: AsyncSession):
-    result = await db.execute(
-        select(Category).where(Category.id == category_id)
-    )
+    result = await db.execute(select(Category).where(Category.id == category_id))
     category = result.scalar_one_or_none()
 
     if not category:
@@ -101,10 +107,9 @@ async def update_category(category_id: str, data: CategoryUpdate, db: AsyncSessi
         "data": category,
     }
 
+
 async def delete_category(category_id: str, db: AsyncSession):
-    result = await db.execute(
-        select(Category).where(Category.id == category_id)
-    )
+    result = await db.execute(select(Category).where(Category.id == category_id))
     category = result.scalar_one_or_none()
 
     if not category:
