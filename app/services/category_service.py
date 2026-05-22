@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import Category
@@ -21,7 +20,7 @@ CATEGORIES = [
 async def get_categories(db: AsyncSession):
     try:
         result = await db.execute(
-            select(Category).where(Category.deleted_at.is_(None))
+            select(Category)
         )
         categories = result.scalars().all()
     except Exception as e:
@@ -38,7 +37,7 @@ async def get_categories(db: AsyncSession):
 
 async def create_category(data: CategoryCreate, db: AsyncSession):
     existing = await db.execute(
-        select(Category).where(Category.name == data.name, Category.deleted_at.is_(None))
+        select(Category).where(Category.name == data.name)
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -70,7 +69,7 @@ async def create_category(data: CategoryCreate, db: AsyncSession):
 
 async def update_category(category_id: str, data: CategoryUpdate, db: AsyncSession):
     result = await db.execute(
-        select(Category).where(Category.id == category_id, Category.deleted_at.is_(None))
+        select(Category).where(Category.id == category_id)
     )
     category = result.scalar_one_or_none()
 
@@ -102,10 +101,9 @@ async def update_category(category_id: str, data: CategoryUpdate, db: AsyncSessi
         "data": category,
     }
 
-
 async def delete_category(category_id: str, db: AsyncSession):
     result = await db.execute(
-        select(Category).where(Category.id == category_id, Category.deleted_at.is_(None))
+        select(Category).where(Category.id == category_id)
     )
     category = result.scalar_one_or_none()
 
@@ -116,7 +114,7 @@ async def delete_category(category_id: str, db: AsyncSession):
         )
 
     try:
-        category.deleted_at = datetime.now(timezone.utc)
+        await db.delete(category)
         await db.commit()
     except Exception:
         await db.rollback()

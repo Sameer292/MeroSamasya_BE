@@ -188,22 +188,6 @@ async def delete_issue(
     return {"message": "Issue deleted successfully.", "data": {"id": issue_id}}
 
 
-async def fetch_categories(db: AsyncSession):
-    try:
-        result = await db.execute(select(Category).where(Category.deleted_at.is_(None)))
-        categories = result.scalars().all()
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch categories.",
-        )
-
-    return {
-        "message": "Categories fetched successfully",
-        "data": categories,
-    }
-
-
 async def update_issue(
     issue_id: str,
     citizen_id: str,
