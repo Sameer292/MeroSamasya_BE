@@ -12,13 +12,19 @@ import math
 MAX_IMAGES = 3
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
 
-
 async def create_issue(
     data: IssueCreate,
     citizen_id: str,
     db: AsyncSession,
     images: list[UploadFile] = [],
 ):
+    category = await db.execute(select(Category).where(Category.id == data.category_id))
+    if not category.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category not found.",
+        )
+
     if len(images) == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
