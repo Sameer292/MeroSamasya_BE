@@ -61,14 +61,9 @@ class LocationSchema(BaseModel):
     class Config:
         from_attributes = True
 
-
 class LocationResponse(BaseModel):
     message: str
     data: list[LocationSchema]
-
-
-class UpdateLocationRequest(BaseModel):
-    location_id: str
 
 
 class UserData(BaseModel):
@@ -114,6 +109,13 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class UpdateProfileRequest(BaseModel):
+    name: Optional[FullName] = None
+    phone: Optional[PhoneNumber] = None
+    location_id: Optional[str] = None
+    profile_picture_url: Optional[str] = None
 
 
 class CategoryResponse(BaseModel):
@@ -185,11 +187,6 @@ class IssueResponse(BaseModel):
 class IssueListData(BaseModel):
     total: int
     issues: list[IssueData]
-
-
-class LocationListResponse(BaseModel):
-    message: str
-    data: list[LocationResponse]
 
 
 class DeleteData(BaseModel):

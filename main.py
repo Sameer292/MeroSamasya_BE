@@ -7,6 +7,7 @@ from app.api import (
     location_routes,
 )
 from app.core.database import engine, Base
+from app.api.profile_routes import router as profile_router
 
 
 @asynccontextmanager
@@ -40,3 +41,5 @@ app.include_router(location_routes.router, prefix="/api/location", tags=["Locati
 app.include_router(
     all_nepal_location_routes.router, prefix="/api/nepal", tags=["Nepal Location"]
 )
+app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
+

@@ -6,7 +6,6 @@ from app.schemas.schema import (
     TokenResponse,
     RefreshTokenRequest,
     RegisterResponse,
-    UserResponse,
 )
 from app.services.auth_service import (
     register_user,
@@ -14,17 +13,8 @@ from app.services.auth_service import (
     refresh_access_token,
 )
 from app.core.database import get_db
-from app.dependencies.auth_deps import get_current_user
 
 router = APIRouter()
-
-
-@router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
-async def get_me(current_user=Depends(get_current_user)):
-    return {
-        "message": "User fetched successfully",
-        "data": current_user
-    }
 
 
 @router.post(
