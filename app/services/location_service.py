@@ -7,7 +7,10 @@ from fastapi import HTTPException, status
 async def get_locations(db: AsyncSession):
     try:
         result = await db.execute(select(Location))
-        return result.scalars().all()
+        return {
+            "message": "Locations fetched successfully",
+            "data": result.scalars().all(),
+        }
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

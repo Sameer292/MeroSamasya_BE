@@ -81,7 +81,10 @@ async def register_user(user: UserCreate, db: AsyncSession):
             detail="Registration failed. Please try again.",
         )
 
-    return {"message": "User registered successfully", "user_id": new_user.id}
+    return {
+        "message": "User registered successfully",
+        "data": {"user_id": new_user.id},
+    }
 
 
 async def login_user(user: UserLogin, db: AsyncSession):
@@ -90,8 +93,8 @@ async def login_user(user: UserLogin, db: AsyncSession):
         db_user = result.scalar_one_or_none()
     except Exception:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed. Please try again.",
         )
 
     if not db_user or not verify_password(user.password, str(db_user.password)):
@@ -105,9 +108,12 @@ async def login_user(user: UserLogin, db: AsyncSession):
         )
 
     return {
-        "access_token": create_token(str(db_user.id)),
-        "refresh_token": create_token(str(db_user.id), refresh=True),
-        "user_id": str(db_user.id),
+        "message": "Login successful",
+        "data": {
+            "access_token": create_token(str(db_user.id)),
+            "refresh_token": create_token(str(db_user.id), refresh=True),
+            "user_id": str(db_user.id),
+        },
     }
 
 
@@ -136,9 +142,10 @@ async def refresh_access_token(token: str):
         )
 
     return {
-        "access_token": create_token(user_id),
-        "refresh_token": create_token(user_id, refresh=True),
-        "user_id": user_id,
+        "message": "Token refreshed successfully",
+        "data": {
+            "access_token": create_token(user_id),
+            "refresh_token": create_token(user_id, refresh=True),
+            "user_id": user_id,
+        },
     }
-
-

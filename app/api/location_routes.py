@@ -8,7 +8,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/locations", response_model=list[LocationResponse], status_code=status.HTTP_200_OK
+    "/locations", response_model=LocationResponse, status_code=status.HTTP_200_OK
 )
 async def locations(db: AsyncSession = Depends(get_db)):
     return await get_locations(db)
