@@ -27,7 +27,7 @@ router = APIRouter()
     "/create", response_model=IssueResponse, status_code=status.HTTP_201_CREATED
 )
 async def open_issue(
-    category_id: int = Form(...),
+    category_id: str = Form(...),
     title: str = Form(..., min_length=3, max_length=200),
     description: Optional[str] = Form(None),
     latitude: float = Form(...),
@@ -111,7 +111,7 @@ async def remove_issue(
 )
 async def edit_issue(
     issue_id: str,
-    category_id: Optional[int] = Form(None),
+    category_id: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     latitude: Optional[float] = Form(None),

@@ -124,7 +124,7 @@ class CategoryUpdate(BaseModel):
 
 
 class CategoryData(BaseModel):
-    id: int
+    id: str
     name: str
     icon: str
     color: str
@@ -144,7 +144,7 @@ class CategoryListResponse(BaseModel):
 
 
 class IssueCreate(BaseModel):
-    category_id: int
+    category_id: str = Field(min_length=1)
     title: str = Field(min_length=3, max_length=200)
     description: str = Field(min_length=5)
     latitude: float
@@ -153,7 +153,7 @@ class IssueCreate(BaseModel):
 
 
 class IssueUpdate(BaseModel):
-    category_id: Optional[int] = None
+    category_id: Optional[str] = None
     title: Optional[str] = Field(None, min_length=3, max_length=200)
     description: Optional[str] = None
     latitude: Optional[float] = None
@@ -205,7 +205,7 @@ class LocationListResponse(BaseModel):
 
 
 class DeleteData(BaseModel):
-    id: int | str
+    id: str
 
 
 class DeleteResponse(BaseModel):
