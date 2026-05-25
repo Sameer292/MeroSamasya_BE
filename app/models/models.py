@@ -25,7 +25,6 @@ class Category(Base):
     name = Column(String, nullable=False, unique=True)
     icon = Column(String, nullable=False)
     color = Column(String, nullable=False)
-    deleted_at = Column(DateTime, nullable=True)
     issues = relationship("Issue", back_populates="category")
 
 

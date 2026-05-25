@@ -19,6 +19,13 @@ async def create_issue(
     db: AsyncSession,
     images: list[UploadFile] = [],
 ):
+    category = await db.execute(select(Category).where(Category.id == data.category_id))
+    if not category.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category not found.",
+        )
+
     if len(images) == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -186,22 +193,6 @@ async def delete_issue(
         )
 
     return {"message": "Issue deleted successfully.", "data": {"id": issue_id}}
-
-
-async def fetch_categories(db: AsyncSession):
-    try:
-        result = await db.execute(select(Category).where(Category.deleted_at.is_(None)))
-        categories = result.scalars().all()
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch categories.",
-        )
-
-    return {
-        "message": "Categories fetched successfully",
-        "data": categories,
-    }
 
 
 async def update_issue(

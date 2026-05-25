@@ -116,7 +116,19 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
-class CategoryResponse(BaseModel):
+class CategoryCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    icon: str = Field(min_length=1)
+    color: str = Field(min_length=4, max_length=7)
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    icon: Optional[str] = None
+    color: Optional[str] = Field(None, min_length=4, max_length=7)
+
+
+class CategoryData(BaseModel):
     id: str
     name: str
     icon: str
@@ -126,9 +138,42 @@ class CategoryResponse(BaseModel):
         from_attributes = True
 
 
+class CategoryResponse(BaseModel):
+    message: str
+    data: CategoryData
+
+
 class CategoryListResponse(BaseModel):
     message: str
-    data: list[CategoryResponse]
+    data: list[CategoryData]
+
+
+class IssueMediaResponse(BaseModel):
+    id: str
+    url: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class IssueData(BaseModel):
+    id: str
+    citizen_id: Optional[str] = None
+    category: Optional[CategoryData] = None
+    title: str
+    description: Optional[str] = None
+    status: IssueStatusEnum
+    latitude: float
+    longitude: float
+    address: Optional[str] = None
+    media: list[IssueMediaResponse] = []
+    created_at: datetime
+    updated_at: datetime
+    resolved_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
 
 
 class IssueCreate(BaseModel):
@@ -149,34 +194,6 @@ class IssueUpdate(BaseModel):
     address: Optional[str] = None
 
 
-class IssueMediaResponse(BaseModel):
-    id: str
-    url: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class IssueData(BaseModel):
-    id: str
-    citizen_id: Optional[str] = None
-    category: Optional[CategoryResponse] = None
-    title: str
-    description: Optional[str] = None
-    status: IssueStatusEnum
-    latitude: float
-    longitude: float
-    address: Optional[str] = None
-    media: list[IssueMediaResponse] = []
-    created_at: datetime
-    updated_at: datetime
-    resolved_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
-
-
 class IssueResponse(BaseModel):
     message: str
     data: IssueData
@@ -187,9 +204,9 @@ class IssueListData(BaseModel):
     issues: list[IssueData]
 
 
-class LocationListResponse(BaseModel):
+class IssueListResponse(BaseModel):
     message: str
-    data: list[LocationResponse]
+    data: IssueListData
 
 
 class DeleteData(BaseModel):
@@ -216,3 +233,8 @@ class PaginatedIssueData(BaseModel):
 class PaginatedIssueResponse(BaseModel):
     message: str
     data: PaginatedIssueData
+
+
+class LocationListResponse(BaseModel):
+    message: str
+    data: list[LocationSchema]

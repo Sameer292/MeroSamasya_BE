@@ -5,6 +5,7 @@ from app.api import (
     auth_routes,
     issue_routes,
     location_routes,
+    category_routes,
 )
 from app.core.database import engine, Base
 
@@ -40,3 +41,4 @@ app.include_router(location_routes.router, prefix="/api/location", tags=["Locati
 app.include_router(
     all_nepal_location_routes.router, prefix="/api/nepal", tags=["Nepal Location"]
 )
+app.include_router(category_routes.router, prefix="/api/category", tags=["Category"])
