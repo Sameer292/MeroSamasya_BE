@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, Text, Enum, ForeignKey, Float
+from sqlalchemy import Column, String, DateTime, Text, Enum, ForeignKey, Float, Integer
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.schemas.enum import AccountStatusEnum, IssueStatusEnum
@@ -21,7 +21,7 @@ class Location(Base):
 class Category(Base):
     __tablename__ = "Categories"
 
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False, unique=True)
     icon = Column(String, nullable=False)
     color = Column(String, nullable=False)
@@ -58,7 +58,7 @@ class Issue(Base):
         String, ForeignKey("Users.id", ondelete="SET NULL"), nullable=True
     )
     category_id = Column(
-        String, ForeignKey("Categories.id", ondelete="SET NULL"), nullable=True
+        Integer, ForeignKey("Categories.id", ondelete="SET NULL"), nullable=True
     )
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)

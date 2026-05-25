@@ -33,7 +33,7 @@ async def add_category(data: CategoryCreate, db: AsyncSession = Depends(get_db))
     "/{category_id}", response_model=CategoryResponse, status_code=status.HTTP_200_OK
 )
 async def edit_category(
-    category_id: str,
+    category_id: int,
     data: CategoryUpdate,
     db: AsyncSession = Depends(get_db),
 ):
@@ -44,12 +44,12 @@ async def edit_category(
     "/{category_id}", response_model=DeleteResponse, status_code=status.HTTP_200_OK
 )
 async def remove_category(
-    category_id: str,
+    category_id: int,
     db: AsyncSession = Depends(get_db),
 ):
     return await delete_category(category_id, db)
 
 
 @router.post("/seed", status_code=status.HTTP_201_CREATED)
-async def seed(db: AsyncSession = Depends(get_db)):
-    return await seed_categories(db)
+async def seed(data: list[CategoryCreate], db: AsyncSession = Depends(get_db)):
+    return await seed_categories(data, db)

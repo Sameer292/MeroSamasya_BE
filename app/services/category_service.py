@@ -4,31 +4,6 @@ from app.models.models import Category
 from app.schemas.schema import CategoryCreate, CategoryUpdate
 from fastapi import HTTPException, status
 
-CATEGORIES = [
-    {"name": "Roads & Transport", "icon": "ri-route-fill", "color": "#F59E0B"},
-    {"name": "Water & Drainage", "icon": "ri-drop-fill", "color": "#3B82F6"},
-    {"name": "Waste & Sanitation", "icon": "ri-delete-bin-fill", "color": "#16A34A"},
-    {
-        "name": "Electricity & Utilities",
-        "icon": "ri-flashlight-fill",
-        "color": "#EAB308",
-    },
-    {
-        "name": "Public Safety & Health",
-        "icon": "ri-alarm-warning-fill",
-        "color": "#DC2626",
-    },
-    {"name": "Environment & Nature", "icon": "ri-tree-fill", "color": "#10B981"},
-    {"name": "Public Infrastructure", "icon": "ri-building-2-fill", "color": "#4B5563"},
-    {
-        "name": "Civic Services & Feedback",
-        "icon": "ri-file-list-3-fill",
-        "color": "#6366F1",
-    },
-    {"name": "Other", "icon": "ri-tools-fill", "color": "#64748B"},
-]
-
-
 async def get_categories(db: AsyncSession):
     try:
         result = await db.execute(select(Category))
@@ -75,7 +50,7 @@ async def create_category(data: CategoryCreate, db: AsyncSession):
     }
 
 
-async def update_category(category_id: str, data: CategoryUpdate, db: AsyncSession):
+async def update_category(category_id: int, data: CategoryUpdate, db: AsyncSession):
     result = await db.execute(select(Category).where(Category.id == category_id))
     category = result.scalar_one_or_none()
 
@@ -108,7 +83,7 @@ async def update_category(category_id: str, data: CategoryUpdate, db: AsyncSessi
     }
 
 
-async def delete_category(category_id: str, db: AsyncSession):
+async def delete_category(category_id: int, db: AsyncSession):
     result = await db.execute(select(Category).where(Category.id == category_id))
     category = result.scalar_one_or_none()
 
@@ -134,20 +109,20 @@ async def delete_category(category_id: str, db: AsyncSession):
     }
 
 
-async def seed_categories(db: AsyncSession):
+async def seed_categories(data: list[CategoryCreate], db: AsyncSession):
     added = []
     skipped = []
 
     try:
-        for cat in CATEGORIES:
+        for cat in data:
             existing = await db.execute(
-                select(Category).where(Category.name == cat["name"])
+                select(Category).where(Category.name == cat.name)
             )
             if existing.scalar_one_or_none():
-                skipped.append(cat["name"])
+                skipped.append(cat.name)
                 continue
-            db.add(Category(**cat))
-            added.append(cat["name"])
+            db.add(Category(**cat.model_dump()))
+            added.append(cat.name)
 
         await db.commit()
     except Exception as e:
