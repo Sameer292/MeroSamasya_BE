@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from app.api import problem_routes
 from contextlib import asynccontextmanager
 from app.api import (
     all_nepal_location_routes,
@@ -39,4 +40,10 @@ app.include_router(issue_routes.router, prefix="/api/issues", tags=["Issues"])
 app.include_router(location_routes.router, prefix="/api/location", tags=["Location"])
 app.include_router(
     all_nepal_location_routes.router, prefix="/api/nepal", tags=["Nepal Location"]
+)
+
+app.include_router(
+    problem_routes.router,
+    prefix="/api/problems",
+    tags=["Problems & Votes"],
 )
