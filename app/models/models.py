@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, Text, Enum, ForeignKey, Float
+from sqlalchemy import Column, String, DateTime, Text, Enum, ForeignKey, Boolean, UniqueConstraint, Float
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.schemas.enum import AccountStatusEnum, IssueStatusEnum
@@ -48,19 +48,17 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
+
     issues = relationship("Issue", back_populates="citizen")
+    upvotes = relationship("Upvote", back_populates="user", cascade="all, delete-orphan")
 
 
 class Issue(Base):
     __tablename__ = "Issues"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    citizen_id = Column(
-        String, ForeignKey("Users.id", ondelete="SET NULL"), nullable=True
-    )
-    category_id = Column(
-        String, ForeignKey("Categories.id", ondelete="SET NULL"), nullable=True
-    )
+    citizen_id = Column(String, ForeignKey("Users.id", ondelete="SET NULL"), nullable=True)
+    category_id = Column(String, ForeignKey("Categories.id", ondelete="SET NULL"), nullable=True)
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     status = Column(
@@ -79,19 +77,32 @@ class Issue(Base):
 
     citizen = relationship("User", back_populates="issues")
     category = relationship("Category", back_populates="issues")
-    media = relationship(
-        "IssueMedia", back_populates="issue", cascade="all, delete-orphan"
-    )
+    media = relationship("IssueMedia", back_populates="issue", cascade="all, delete-orphan")
+    upvotes = relationship("Upvote", back_populates="issue", cascade="all, delete-orphan")
 
 
 class IssueMedia(Base):
     __tablename__ = "IssueMedia"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    issue_id = Column(
-        String, ForeignKey("Issues.id", ondelete="CASCADE"), nullable=False
-    )
+    issue_id = Column(String, ForeignKey("Issues.id", ondelete="CASCADE"), nullable=False)
     url = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     issue = relationship("Issue", back_populates="media")
+
+
+class Upvote(Base):
+    __tablename__ = "Upvotes"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("Users.id", ondelete="CASCADE"), nullable=False)
+    issue_id = Column(String, ForeignKey("Issues.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "issue_id", name="unique_user_issue_Upvote"),
+    )
+
+    user = relationship("User", back_populates="upvotes")
+    issue = relationship("Issue", back_populates="upvotes")

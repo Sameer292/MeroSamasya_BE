@@ -169,6 +169,8 @@ class IssueData(BaseModel):
     longitude: float
     address: Optional[str] = None
     media: list[IssueMediaResponse] = []
+    vote_count: int = 0        # ← ADDED
+    has_voted: bool = False    # ← ADDED
     created_at: datetime
     updated_at: datetime
     resolved_at: Optional[datetime] = None
@@ -216,3 +218,9 @@ class PaginatedIssueData(BaseModel):
 class PaginatedIssueResponse(BaseModel):
     message: str
     data: PaginatedIssueData
+
+
+class VoteResponse(BaseModel):
+    message: str
+    vote_count: int
+    has_voted: bool
