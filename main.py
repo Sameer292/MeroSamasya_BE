@@ -1,12 +1,11 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.api import (
-    all_nepal_location_routes,
-    auth_routes,
-    issue_routes,
-    location_routes,
-)
+from app.api import auth_routes
+from app.api import all_nepal_location_routes
+from app.api import issue_routes
+from app.api import kyc_routes
 from app.core.database import engine, Base
+import app.models.kyc
 
 
 @asynccontextmanager
@@ -34,9 +33,7 @@ def root():
     return {"message": "Working"}
 
 
-app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(issue_routes.router, prefix="/api/issues", tags=["Issues"])
-app.include_router(location_routes.router, prefix="/api/location", tags=["Location"])
-app.include_router(
-    all_nepal_location_routes.router, prefix="/api/nepal", tags=["Nepal Location"]
-)
+app.include_router(auth_routes.router,               prefix="/api/auth",   tags=["Authentication"])
+app.include_router(all_nepal_location_routes.router, prefix="/api/nepal",  tags=["Nepal Location"])
+app.include_router(issue_routes.router,              prefix="/api/issues", tags=["Issues"])
+app.include_router(kyc_routes.router,                prefix="/api/kyc",    tags=["KYC"])

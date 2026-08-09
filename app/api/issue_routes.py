@@ -8,6 +8,7 @@ from app.schemas.schema import (
     CategoryListResponse,
     IssueUpdate,
     PaginatedIssueResponse,
+    VoteResponse,
 )
 from app.services.issue_service import (
     create_issue,
@@ -18,6 +19,7 @@ from app.services.issue_service import (
     update_issue,
     get_all_issues,
     get_issues_by_location,
+    toggle_vote,
 )
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
@@ -70,15 +72,14 @@ async def get_categories(db: AsyncSession = Depends(get_db)):
     return await fetch_categories(db)
 
 
-@router.get(
-    "/all", response_model=PaginatedIssueResponse, status_code=status.HTTP_200_OK
-)
+@router.get("/all", response_model=PaginatedIssueResponse, status_code=status.HTTP_200_OK)
 async def all_issues(
     page: int = 1,
     limit: int = 10,
+    current_user=Depends(get_current_user),   
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_all_issues(page, limit, db)
+    return await get_all_issues(page, limit, db, current_user.id) 
 
 
 @router.get(
@@ -92,15 +93,16 @@ async def issues_by_location(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_issues_by_location(current_user.location_id, page, limit, db)
+    return await get_issues_by_location(current_user.location_id, page, limit, db, current_user.id)
 
 
 @router.get("/{issue_id}", response_model=IssueResponse, status_code=status.HTTP_200_OK)
 async def issue_detail(
     issue_id: str,
+    current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_issue_by_id(issue_id, db)
+    return await get_issue_by_id(issue_id, db, current_user.id)
 
 
 @router.delete(
@@ -139,3 +141,15 @@ async def edit_issue(
         address=address,
     )
     return await update_issue(issue_id, current_user.id, data, db, images)
+
+@router.post(
+    "/{issue_id}/vote",
+    response_model=VoteResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def vote_issue(
+    issue_id: str,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await toggle_vote(issue_id, current_user.id, db)
