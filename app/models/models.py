@@ -52,6 +52,15 @@ class User(Base):
     issues = relationship("Issue", back_populates="citizen")
     upvotes = relationship("Upvote", back_populates="user", cascade="all, delete-orphan")
 
+    # NEW
+    kyc = relationship(
+        "KYCSubmission",
+        back_populates="user",
+        foreign_keys="KYCSubmission.user_id",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
 
 class Issue(Base):
     __tablename__ = "Issues"

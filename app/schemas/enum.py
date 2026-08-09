@@ -20,3 +20,9 @@ class LocalLevelType(Enum):
     UPA_MA = "Upa.Ma."
     NA_PA = "Na.Pa."
     GA_PA = "Ga.Pa."
+
+
+class KYCStatusEnum(str, Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
