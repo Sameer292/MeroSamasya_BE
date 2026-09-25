@@ -136,6 +136,7 @@ async def edit_issue(
     longitude: Optional[float] = Form(None),
     address: Optional[str] = Form(None),
     local_level_id: Optional[str] = Form(None),
+    keep_media_ids: list[str] = Form(default=[]),
     images: list[UploadFile] = File(default=[]),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -149,4 +150,4 @@ async def edit_issue(
         address=address,
         local_level_id=local_level_id,
     )
-    return await update_issue(issue_id, current_user.id, data, db, images)
+    return await update_issue(issue_id, current_user.id, data, db, images, keep_media_ids)

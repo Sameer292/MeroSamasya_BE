@@ -270,6 +270,7 @@ async def update_issue(
     data: IssueUpdate,
     db: AsyncSession,
     images: list[UploadFile] = [],
+    keep_media_ids: list[str] = [],
 ):
     issue_response = await get_issue_by_id(issue_id, db, citizen_id, for_update=True)
     issue = issue_response["data"]
@@ -316,10 +317,28 @@ async def update_issue(
                 db, data.local_level_id, citizen_id
             )
 
-        if len(images) > 0:
-            await db.execute(
-                IssueMedia.__table__.delete().where(IssueMedia.issue_id == issue_id)
-            )
+        media_touched = bool(images) or bool(keep_media_ids)
+        retained_ids: set[str] = set()
+        if media_touched:
+            if keep_media_ids:
+                valid_ids = {m.id for m in issue.media}
+                if not set(keep_media_ids) <= valid_ids:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid media id in keep_media_ids.",
+                    )
+                retained_ids = set(keep_media_ids)
+            total_media = len(retained_ids) + len(images)
+            if not 1 <= total_media <= MAX_IMAGES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Issue must end with 1 to {MAX_IMAGES} photos.",
+                )
+
+        if media_touched:
+            for media in issue.media:
+                if media.id not in retained_ids:
+                    await db.delete(media)
             for image in images:
                 # ponytail: bounded read, a huge upload never fully lands in memory
                 file_bytes = await image.read(MAX_FILE_BYTES + 1)
@@ -327,8 +346,7 @@ async def update_issue(
                 url = await store_issue_photo(
                     file_bytes, image.content_type, citizen_id, issue_id
                 )
-                media = IssueMedia(issue_id=issue_id, url=url)
-                db.add(media)
+                db.add(IssueMedia(issue_id=issue_id, url=url))
 
         await db.commit()
         db.expire_all()
