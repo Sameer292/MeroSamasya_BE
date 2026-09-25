@@ -1,22 +1,15 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, DateTime, Enum, Float, ForeignKey, String, Text, func, select
-from sqlalchemy.orm import column_property, relationship
+from sqlalchemy import Column, DateTime, Enum, Float, ForeignKey, String, Text, cast, func, select
+from sqlalchemy.orm import column_property, foreign, relationship
 from app.core.database import Base
 from app.models.admin_auth import AdminMembership
+from app.models.nepal_location_models import LocalLevel
 from app.schemas.enum import AccountStatusEnum, IssueStatusEnum, UserRole
 
 
 def utcnow():
     return datetime.now(timezone.utc)
-
-
-class Location(Base):
-    __tablename__ = "Locations"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String, nullable=False, unique=True)
-    users = relationship("User", back_populates="location")
 
 
 class Category(Base):
@@ -46,8 +39,14 @@ class User(Base):
     name = Column(String, nullable=True)
     password = Column(String, nullable=False)
     phone = Column(String, nullable=True)
-    location_id = Column(String, ForeignKey("Locations.id"), nullable=True)
-    location = relationship("Location", back_populates="users")
+    # ponytail: stores the Nepal LocalLevel id (stringified). Validated
+    # against local_levels on write; no legacy Locations table anymore.
+    location_id = Column(String, nullable=True)
+    location = relationship(
+        LocalLevel,
+        primaryjoin=foreign(location_id) == cast(LocalLevel.id, String),
+        viewonly=True,
+    )
     profile_picture_url = Column(Text, nullable=True)
     account_status = Column(
         Enum(AccountStatusEnum, name="account_status_enum", create_type=False),

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator, Field, model_validator
 from typing import Annotated, Optional
 from datetime import datetime
 from .enum import AccountStatusEnum, IssueStatusEnum, UserRole
@@ -49,16 +49,10 @@ class UserLogin(BaseModel):
 
 
 class LocationSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True, coerce_numbers_to_str=True)
+
     id: str
     name: str
-
-    class Config:
-        from_attributes = True
-
-
-class LocationResponse(BaseModel):
-    message: str
-    data: list[LocationSchema]
 
 
 class UpdateLocationRequest(BaseModel):

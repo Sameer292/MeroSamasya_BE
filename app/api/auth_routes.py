@@ -18,16 +18,16 @@ from app.services.refresh_tokens import refresh_access_token, revoke_refresh_tok
 from app.services.password_change import change_password
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
+from app.services.location_service import serialize_user
 
 router = APIRouter()
 
 
 @router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
-async def get_me(current_user=Depends(get_current_user)):
-    return {
-        "message": "User fetched successfully",
-        "data": current_user
-    }
+async def get_me(
+    current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    return await serialize_user(db, current_user, "User fetched successfully")
 
 
 @router.post(
