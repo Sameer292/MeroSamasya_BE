@@ -13,7 +13,8 @@ from app.api import (
     issue_routes,
     location_routes,
     notification_routes,
-    profile_routes,
+    kyc_routes,
+    admin_routes,
 )
 from app.core.admin_config import ADMIN_WEB_ORIGIN
 from app.core.database import engine, Base, AsyncSessionLocal
@@ -75,7 +76,8 @@ app.include_router(files_routes.router, prefix="/api/files", tags=["Files"])
 app.include_router(
     notification_routes.router, prefix="/api/notifications", tags=["Notifications"]
 )
-app.include_router(profile_routes.router, prefix="/api/profile", tags=["Profile"])
+app.include_router(kyc_routes.router, prefix="/api/kyc", tags=["KYC"])
+app.include_router(admin_routes.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(
     all_nepal_location_routes.router, prefix="/api/nepal", tags=["Nepal Location"]
 )

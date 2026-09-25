@@ -1,5 +1,15 @@
-from fastapi import APIRouter, Depends, Query, status, UploadFile, File, Form
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    status,
+    UploadFile,
+    File,
+    Form,
+)
 from typing import Optional
+import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.schema import (
     IssueResponse,
@@ -8,7 +18,7 @@ from app.schemas.schema import (
     IssueUpdate,
     PaginatedIssueResponse,
     CategoryListResponse,
-    VoteResponse,
+    UpvoteResponse,
 )
 from app.services.issue_service import (
     create_issue,
@@ -136,7 +146,7 @@ async def edit_issue(
     longitude: Optional[float] = Form(None),
     address: Optional[str] = Form(None),
     local_level_id: Optional[str] = Form(None),
-    keep_media_ids: list[str] = Form(default=[]),
+    retained_media_ids: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -150,4 +160,31 @@ async def edit_issue(
         address=address,
         local_level_id=local_level_id,
     )
-    return await update_issue(issue_id, current_user.id, data, db, images, keep_media_ids)
+    retained: list[str] | None = None
+    if retained_media_ids is not None:
+        try:
+            parsed = json.loads(retained_media_ids)
+        except (json.JSONDecodeError, TypeError):
+            parsed = None
+        if not isinstance(parsed, list) or not all(
+            isinstance(x, str) for x in parsed
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="retained_media_ids must be a JSON array of strings.",
+            )
+        retained = parsed
+    return await update_issue(
+        issue_id, current_user.id, data, db, images, retained
+    )
+
+
+@router.post(
+    "/{issue_id}/upvote", response_model=UpvoteResponse, status_code=status.HTTP_200_OK
+)
+async def upvote_issue(
+    issue_id: str,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await toggle_vote(issue_id, current_user.id, db)

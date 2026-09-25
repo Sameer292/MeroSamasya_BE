@@ -41,3 +41,13 @@ def local_path(kind: str, name: str) -> Path:
     if not path.is_file():
         raise FileNotFoundError(name)
     return path
+
+
+def delete_local(kind: str, name: str | None):
+    """Best-effort removal of a replaced file."""
+    if not name:
+        return
+    try:
+        local_path(kind, name).unlink()
+    except (ValueError, FileNotFoundError, OSError):
+        pass

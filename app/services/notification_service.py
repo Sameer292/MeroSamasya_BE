@@ -100,30 +100,6 @@ async def mark_read(notification_id: str, user_id: str, db: AsyncSession):
     return {"message": "Notification marked as read", "data": notification}
 
 
-async def mark_all_read(user_id: str, db: AsyncSession):
-    try:
-        result = await db.execute(
-            select(Notification).where(
-                Notification.user_id == user_id,
-                Notification.read.is_(False),
-            )
-        )
-        unread = result.scalars().all()
-        for notification in unread:
-            notification.read = True
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to mark notifications as read.",
-        )
-    return {
-        "message": "All notifications marked as read",
-        "data": {"updated": len(unread)},
-    }
-
-
 async def clear_all(user_id: str, db: AsyncSession):
     try:
         result = await db.execute(

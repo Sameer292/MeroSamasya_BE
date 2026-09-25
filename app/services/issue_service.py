@@ -56,8 +56,8 @@ async def store_issue_photo(
 
 def attach_votes(issues: list, current_user_id: str | None):
     for issue in issues:
-        issue.vote_count = len(issue.upvotes)
-        issue.has_voted = (
+        issue.upvote_count = len(issue.upvotes)
+        issue.has_upvoted = (
             any(v.user_id == current_user_id for v in issue.upvotes)
             if current_user_id
             else False
@@ -271,7 +271,7 @@ async def update_issue(
     data: IssueUpdate,
     db: AsyncSession,
     images: list[UploadFile] = [],
-    keep_media_ids: list[str] = [],
+    retained_media_ids: list[str] | None = None,
 ):
     issue_response = await get_issue_by_id(issue_id, db, citizen_id, for_update=True)
     issue = issue_response["data"]
@@ -318,17 +318,19 @@ async def update_issue(
                 db, data.local_level_id, citizen_id
             )
 
-        media_touched = bool(images) or bool(keep_media_ids)
+        # ponytail: omitted list = legacy (replace-all iff new files arrive);
+        # explicit list (even []) = retain exactly those, remove the rest.
+        media_touched = bool(images) or retained_media_ids is not None
         retained_ids: set[str] = set()
         if media_touched:
-            if keep_media_ids:
+            if retained_media_ids:
                 valid_ids = {m.id for m in issue.media}
-                if not set(keep_media_ids) <= valid_ids:
+                if not set(retained_media_ids) <= valid_ids:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Invalid media id in keep_media_ids.",
+                        detail="Invalid media id in retained_media_ids.",
                     )
-                retained_ids = set(keep_media_ids)
+                retained_ids = set(retained_media_ids)
             total_media = len(retained_ids) + len(images)
             if not 1 <= total_media <= MAX_IMAGES:
                 raise HTTPException(
@@ -492,13 +494,13 @@ async def toggle_vote(issue_id: str, user_id: str, db: AsyncSession):
         vote = existing.scalar_one_or_none()
         if vote:
             await db.delete(vote)
-            has_voted = False
+            upvoted = False
             message = "Upvote removed"
         else:
             db.add(Upvote(user_id=user_id, issue_id=issue.id))
-            has_voted = True
+            upvoted = True
             message = "Upvoted successfully"
-            # ponytail: no self-upvote spam, owner learns from vote_count
+            # ponytail: no self-upvote spam, owner learns from upvote_count
             if issue.citizen_id and issue.citizen_id != user_id:
                 notify(
                     db,
@@ -512,7 +514,7 @@ async def toggle_vote(issue_id: str, user_id: str, db: AsyncSession):
     except IntegrityError:
         # ponytail: double-tap race lost, the other request won
         await db.rollback()
-        has_voted = True
+        upvoted = True
         message = "Upvoted successfully"
     except HTTPException:
         raise
@@ -528,6 +530,5 @@ async def toggle_vote(issue_id: str, user_id: str, db: AsyncSession):
     )
     return {
         "message": message,
-        "vote_count": count_result.scalar() or 0,
-        "has_voted": has_voted,
+        "data": {"upvoted": upvoted, "upvote_count": count_result.scalar() or 0},
     }

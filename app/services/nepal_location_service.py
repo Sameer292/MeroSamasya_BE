@@ -112,10 +112,11 @@ async def seed_locations(data: dict, db: AsyncSession):
 
 
 async def ensure_bundled_locations(db: AsyncSession) -> dict:
-    """Seed the bundled Nepal data; no-op when already complete.
+    """Seed the bundled MoFAGA extract; additive only, never deletes.
 
-    Always runs at startup so older databases also gain missing levels
-    (e.g. the Rukum backfill). Name-matched upsert, never duplicates.
-    Returns counts of rows added.
+    Fresh DBs get the full 7/77/753 dataset. Older databases only gain
+    missing rows by name-match. A stale dev database (e.g. pre-official
+    names) should be deleted once for a clean reseed; the file is gitignored
+    and holds no users/issues. Returns counts of rows added.
     """
     return await seed_locations(load_bundled_seed(), db)

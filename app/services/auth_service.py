@@ -40,8 +40,7 @@ async def create_registered_user(user: UserCreate, email: str, db: AsyncSession)
             phone=user.phone,
         )
         db.add(new_user)
-        await db.commit()
-        await db.refresh(new_user)
+        await db.flush()
         notify(
             db,
             str(new_user.id),
@@ -50,6 +49,7 @@ async def create_registered_user(user: UserCreate, email: str, db: AsyncSession)
             "Report issues in your area and track them here.",
         )
         await db.commit()
+        await db.refresh(new_user)
     except Exception:
         await db.rollback()
         raise HTTPException(
