@@ -55,6 +55,11 @@ class LocationSchema(BaseModel):
     name: str
 
 
+class LocationResponse(BaseModel):
+    message: str
+    data: list[LocationSchema]
+
+
 class UpdateLocationRequest(BaseModel):
     location_id: str
 
@@ -144,6 +149,7 @@ class IssueCreate(BaseModel):
     latitude: float
     longitude: float
     address: Optional[str] = Field(None, min_length=1)
+    local_level_id: Optional[str] = None
 
 
 class IssueUpdate(BaseModel):
@@ -153,6 +159,7 @@ class IssueUpdate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     address: Optional[str] = None
+    local_level_id: Optional[str] = None
 
 
 class IssueMediaResponse(BaseModel):
@@ -175,6 +182,9 @@ class IssueData(BaseModel):
     longitude: float
     address: Optional[str] = None
     media: list[IssueMediaResponse] = []
+    vote_count: int = 0
+    has_voted: bool = False
+    local_level_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     resolved_at: Optional[datetime] = None
@@ -222,3 +232,9 @@ class PaginatedIssueData(BaseModel):
 class PaginatedIssueResponse(BaseModel):
     message: str
     data: PaginatedIssueData
+
+
+class VoteResponse(BaseModel):
+    message: str
+    vote_count: int
+    has_voted: bool

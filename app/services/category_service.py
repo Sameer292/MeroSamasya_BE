@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import Category
 from app.schemas.schema import CategoryCreate, CategoryUpdate
@@ -173,3 +173,19 @@ async def seed_categories(db: AsyncSession):
             "skipped": skipped,
         },
     }
+
+
+async def ensure_default_categories(db: AsyncSession) -> int:
+    """Insert the bundled categories only when the table is empty.
+
+    Runs at startup so a fresh local DB can submit issues with zero setup.
+    Idempotent by construction: non-empty tables are left untouched.
+    Returns the number of rows added.
+    """
+    count = (await db.execute(select(func.count(Category.id)))).scalar() or 0
+    if count > 0:
+        return 0
+    for cat in CATEGORIES:
+        db.add(Category(**cat))
+    await db.commit()
+    return len(CATEGORIES)

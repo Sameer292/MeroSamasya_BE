@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.models import Issue, IssueMedia, Category, User
+from app.models.models import Issue, IssueMedia, Category, User, Upvote
+from app.services.location_service import get_level_or_404
 from app.schemas.schema import IssueCreate, IssueUpdate
 from fastapi import HTTPException, status, UploadFile
 from app.core.cloudinary import upload_image, is_configured as cloudinary_configured
@@ -51,6 +53,27 @@ async def store_issue_photo(
     return f"/api/files/issues/{name}"
 
 
+def attach_votes(issues: list, current_user_id: str | None):
+    for issue in issues:
+        issue.vote_count = len(issue.upvotes)
+        issue.has_voted = (
+            any(v.user_id == current_user_id for v in issue.upvotes)
+            if current_user_id
+            else False
+        )
+    return issues
+
+
+async def resolve_issue_level(
+    db: AsyncSession, explicit: str | None, citizen_id: str
+) -> str | None:
+    """Explicit area wins (validated); otherwise snapshot the reporter's area."""
+    if explicit is not None:
+        return str((await get_level_or_404(explicit, db)).id)
+    result = await db.execute(select(User.location_id).where(User.id == citizen_id))
+    return result.scalar_one_or_none()
+
+
 async def create_issue(
     data: IssueCreate,
     citizen_id: str,
@@ -81,12 +104,14 @@ async def create_issue(
             latitude=data.latitude,
             longitude=data.longitude,
             address=data.address,
+            local_level_id=await resolve_issue_level(db, data.local_level_id, citizen_id),
         )
         db.add(issue)
         await db.flush()
 
         for image in images:
-            file_bytes = await image.read()
+            # ponytail: bounded read, a huge upload never fully lands in memory
+            file_bytes = await image.read(MAX_FILE_BYTES + 1)
             check_file_bytes(file_bytes)
             url = await store_issue_photo(
                 file_bytes, image.content_type, citizen_id, issue.id
@@ -102,9 +127,11 @@ async def create_issue(
             .options(
                 selectinload(Issue.media),
                 selectinload(Issue.category),
+                selectinload(Issue.upvotes),
             )
         )
         issue = result.scalar_one()
+        attach_votes([issue], citizen_id)
     except HTTPException:
         raise
     except Exception as e:
@@ -138,12 +165,13 @@ async def get_my_issues(citizen_id: str, page: int, limit: int, db: AsyncSession
             .options(
                 selectinload(Issue.media),
                 selectinload(Issue.category),
+                selectinload(Issue.upvotes),
             )
             .order_by(Issue.created_at.desc())
             .offset(offset)
             .limit(limit)
         )
-        issues = result.scalars().all()
+        issues = attach_votes(list(result.scalars().all()), citizen_id)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -164,7 +192,13 @@ async def get_my_issues(citizen_id: str, page: int, limit: int, db: AsyncSession
     }
 
 
-async def get_issue_by_id(issue_id: str, db: AsyncSession, *, for_update: bool = False):
+async def get_issue_by_id(
+    issue_id: str,
+    db: AsyncSession,
+    current_user_id: str | None = None,
+    *,
+    for_update: bool = False,
+):
     try:
         statement = (
             select(Issue)
@@ -172,6 +206,7 @@ async def get_issue_by_id(issue_id: str, db: AsyncSession, *, for_update: bool =
             .options(
                 selectinload(Issue.media),
                 selectinload(Issue.category),
+                selectinload(Issue.upvotes),
             )
         )
         if for_update:
@@ -189,6 +224,8 @@ async def get_issue_by_id(issue_id: str, db: AsyncSession, *, for_update: bool =
             detail="Issue not found.",
         )
 
+    attach_votes([issue], current_user_id)
+
     return {
         "message": "Issue fetched successfully",
         "data": issue,
@@ -198,7 +235,7 @@ async def get_issue_by_id(issue_id: str, db: AsyncSession, *, for_update: bool =
 async def delete_issue(
     issue_id: str, citizen_id: str, delete_reason: str | None, db: AsyncSession
 ):
-    issue_response = await get_issue_by_id(issue_id, db, for_update=True)
+    issue_response = await get_issue_by_id(issue_id, db, citizen_id, for_update=True)
     issue = issue_response["data"]
 
     if issue.citizen_id != citizen_id:
@@ -234,7 +271,7 @@ async def update_issue(
     db: AsyncSession,
     images: list[UploadFile] = [],
 ):
-    issue_response = await get_issue_by_id(issue_id, db, for_update=True)
+    issue_response = await get_issue_by_id(issue_id, db, citizen_id, for_update=True)
     issue = issue_response["data"]
 
     if issue.citizen_id != citizen_id:
@@ -274,13 +311,18 @@ async def update_issue(
             issue.longitude = data.longitude
         if data.address is not None:
             issue.address = data.address
+        if data.local_level_id is not None:
+            issue.local_level_id = await resolve_issue_level(
+                db, data.local_level_id, citizen_id
+            )
 
         if len(images) > 0:
             await db.execute(
                 IssueMedia.__table__.delete().where(IssueMedia.issue_id == issue_id)
             )
             for image in images:
-                file_bytes = await image.read()
+                # ponytail: bounded read, a huge upload never fully lands in memory
+                file_bytes = await image.read(MAX_FILE_BYTES + 1)
                 check_file_bytes(file_bytes)
                 url = await store_issue_photo(
                     file_bytes, image.content_type, citizen_id, issue_id
@@ -297,9 +339,11 @@ async def update_issue(
             .options(
                 selectinload(Issue.media),
                 selectinload(Issue.category),
+                selectinload(Issue.upvotes),
             )
         )
         updated_issue = result.scalar_one()
+        attach_votes([updated_issue], citizen_id)
     except HTTPException:
         raise
     except Exception as e:
@@ -316,7 +360,9 @@ async def update_issue(
     }
 
 
-async def get_all_issues(page: int, limit: int, db: AsyncSession):
+async def get_all_issues(
+    page: int, limit: int, db: AsyncSession, current_user_id: str | None = None
+):
     try:
         offset = (page - 1) * limit
 
@@ -330,12 +376,13 @@ async def get_all_issues(page: int, limit: int, db: AsyncSession):
             .options(
                 selectinload(Issue.media),
                 selectinload(Issue.category),
+                selectinload(Issue.upvotes),
             )
             .order_by(Issue.created_at.desc())
             .offset(offset)
             .limit(limit)
         )
-        issues = result.scalars().all()
+        issues = attach_votes(list(result.scalars().all()), current_user_id)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -357,7 +404,11 @@ async def get_all_issues(page: int, limit: int, db: AsyncSession):
 
 
 async def get_issues_by_location(
-    location_id: str | None, page: int, limit: int, db: AsyncSession
+    location_id: str | None,
+    page: int,
+    limit: int,
+    db: AsyncSession,
+    current_user_id: str | None = None,
 ):
     if not location_id:
         raise HTTPException(
@@ -368,25 +419,25 @@ async def get_issues_by_location(
         offset = (page - 1) * limit
 
         count_result = await db.execute(
-            select(func.count(Issue.id))
-            .join(User, User.id == Issue.citizen_id)
-            .where(Issue.deleted_at.is_(None), User.location_id == location_id)
+            select(func.count(Issue.id)).where(
+                Issue.deleted_at.is_(None), Issue.local_level_id == location_id
+            )
         )
         total = count_result.scalar()
 
         result = await db.execute(
             select(Issue)
-            .join(User, User.id == Issue.citizen_id)
-            .where(Issue.deleted_at.is_(None), User.location_id == location_id)
+            .where(Issue.deleted_at.is_(None), Issue.local_level_id == location_id)
             .options(
                 selectinload(Issue.media),
                 selectinload(Issue.category),
+                selectinload(Issue.upvotes),
             )
             .order_by(Issue.created_at.desc())
             .offset(offset)
             .limit(limit)
         )
-        issues = result.scalars().all()
+        issues = attach_votes(list(result.scalars().all()), current_user_id)
     except HTTPException:
         raise
     except Exception:
@@ -406,4 +457,48 @@ async def get_issues_by_location(
             },
             "issues": issues,
         },
+    }
+
+
+async def toggle_vote(issue_id: str, user_id: str, db: AsyncSession):
+    issue_response = await get_issue_by_id(issue_id, db, user_id)
+    issue = issue_response["data"]
+
+    try:
+        existing = await db.execute(
+            select(Upvote).where(
+                Upvote.issue_id == issue_id, Upvote.user_id == user_id
+            )
+        )
+        vote = existing.scalar_one_or_none()
+        if vote:
+            await db.delete(vote)
+            has_voted = False
+            message = "Upvote removed"
+        else:
+            db.add(Upvote(user_id=user_id, issue_id=issue.id))
+            has_voted = True
+            message = "Upvoted successfully"
+        await db.commit()
+    except IntegrityError:
+        # ponytail: double-tap race lost, the other request won
+        await db.rollback()
+        has_voted = True
+        message = "Upvoted successfully"
+    except HTTPException:
+        raise
+    except Exception:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to toggle upvote.",
+        )
+
+    count_result = await db.execute(
+        select(func.count(Upvote.id)).where(Upvote.issue_id == issue_id)
+    )
+    return {
+        "message": message,
+        "vote_count": count_result.scalar() or 0,
+        "has_voted": has_voted,
     }

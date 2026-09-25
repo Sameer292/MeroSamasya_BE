@@ -14,13 +14,18 @@ from app.api import (
     location_routes,
 )
 from app.core.admin_config import ADMIN_WEB_ORIGIN
-from app.core.database import engine, Base
+from app.core.database import engine, Base, AsyncSessionLocal
+from app.core.migrations import run_startup_migrations
+from app.services.category_service import ensure_default_categories
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await run_startup_migrations(engine)
+    async with AsyncSessionLocal() as session:
+        await ensure_default_categories(session)
     yield
 
 

@@ -5,6 +5,28 @@ from app.models.nepal_location_models import LocalLevel
 from fastapi import HTTPException, status
 
 
+async def get_locations(
+    db: AsyncSession, district_id: int | None = None
+) -> dict:
+    """Selectable areas from live local_levels data. IDs are strings and
+    valid for PATCH /api/location/location (replaces hardcoded client IDs)."""
+    try:
+        query = select(LocalLevel).order_by(LocalLevel.name)
+        if district_id is not None:
+            query = query.where(LocalLevel.district_id == district_id)
+        result = await db.execute(query)
+        levels = result.scalars().all()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch locations",
+        )
+    return {
+        "message": "Locations fetched successfully",
+        "data": [{"id": str(level.id), "name": level.name} for level in levels],
+    }
+
+
 async def location_schema(db: AsyncSession, location_id: str | None) -> dict | None:
     """Resolve a user's location_id to {id, name} from live local_levels data."""
     if not location_id:

@@ -1,6 +1,9 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, DateTime, Enum, Float, ForeignKey, String, Text, cast, func, select
+from sqlalchemy import (
+    Column, DateTime, Enum, Float, ForeignKey, String, Text, UniqueConstraint,
+    cast, func, select,
+)
 from sqlalchemy.orm import column_property, foreign, relationship
 from app.core.database import Base
 from app.models.admin_auth import AdminMembership
@@ -57,6 +60,9 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     issues = relationship("Issue", back_populates="citizen")
+    upvotes = relationship(
+        "Upvote", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Issue(Base):
@@ -79,6 +85,10 @@ class Issue(Base):
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     address = Column(Text, nullable=True)
+    # ponytail: area the issue belongs to (LocalLevel id, stringified).
+    # Snapshotted from the reporter at creation so /nearme follows the
+    # issue, not the reporter's later moves.
+    local_level_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
@@ -89,6 +99,9 @@ class Issue(Base):
     category = relationship("Category", back_populates="issues")
     media = relationship(
         "IssueMedia", back_populates="issue", cascade="all, delete-orphan"
+    )
+    upvotes = relationship(
+        "Upvote", back_populates="issue", cascade="all, delete-orphan"
     )
 
 
@@ -103,3 +116,23 @@ class IssueMedia(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     issue = relationship("Issue", back_populates="media")
+
+
+class Upvote(Base):
+    __tablename__ = "Upvotes"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(
+        String, ForeignKey("Users.id", ondelete="CASCADE"), nullable=False
+    )
+    issue_id = Column(
+        String, ForeignKey("Issues.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "issue_id", name="unique_user_issue_upvote"),
+    )
+
+    user = relationship("User", back_populates="upvotes")
+    issue = relationship("Issue", back_populates="upvotes")

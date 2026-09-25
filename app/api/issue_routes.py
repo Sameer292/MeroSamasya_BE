@@ -8,6 +8,7 @@ from app.schemas.schema import (
     IssueUpdate,
     PaginatedIssueResponse,
     CategoryListResponse,
+    VoteResponse,
 )
 from app.services.issue_service import (
     create_issue,
@@ -17,6 +18,7 @@ from app.services.issue_service import (
     update_issue,
     get_all_issues,
     get_issues_by_location,
+    toggle_vote,
 )
 from app.services.category_service import get_categories
 from app.core.database import get_db
@@ -35,6 +37,7 @@ async def open_issue(
     latitude: float = Form(...),
     longitude: float = Form(...),
     address: Optional[str] = Form(None),
+    local_level_id: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -47,6 +50,7 @@ async def open_issue(
         latitude=latitude,
         longitude=longitude,
         address=address,
+        local_level_id=local_level_id,
     )
     return await create_issue(data, current_user.id, db, images)
 
@@ -77,9 +81,10 @@ async def issue_categories(db: AsyncSession = Depends(get_db)):
 async def all_issues(
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
+    current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_all_issues(page, limit, db)
+    return await get_all_issues(page, limit, db, current_user.id)
 
 
 @router.get(
@@ -93,15 +98,18 @@ async def issues_by_location(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_issues_by_location(current_user.location_id, page, limit, db)
+    return await get_issues_by_location(
+        current_user.location_id, page, limit, db, current_user.id
+    )
 
 
 @router.get("/{issue_id}", response_model=IssueResponse, status_code=status.HTTP_200_OK)
 async def issue_detail(
     issue_id: str,
+    current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_issue_by_id(issue_id, db)
+    return await get_issue_by_id(issue_id, db, current_user.id)
 
 
 @router.delete(
@@ -122,11 +130,12 @@ async def remove_issue(
 async def edit_issue(
     issue_id: str,
     category_id: Optional[str] = Form(None),
-    title: Optional[str] = Form(None),
+    title: Optional[str] = Form(None, min_length=3, max_length=200),
     description: Optional[str] = Form(None),
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
     address: Optional[str] = Form(None),
+    local_level_id: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -138,5 +147,6 @@ async def edit_issue(
         latitude=latitude,
         longitude=longitude,
         address=address,
+        local_level_id=local_level_id,
     )
     return await update_issue(issue_id, current_user.id, data, db, images)
