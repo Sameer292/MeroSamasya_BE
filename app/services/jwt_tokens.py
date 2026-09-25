@@ -9,6 +9,8 @@ from fastapi import HTTPException, status
 load_dotenv(".env")
 
 JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET is not set")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_LIFETIME = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60)))
 REFRESH_LIFETIME = timedelta(days=int(os.getenv("REFRESH_TOKEN_EXPIRY_DAYS", 15)))

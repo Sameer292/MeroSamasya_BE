@@ -9,6 +9,7 @@ from app.api import (
     all_nepal_location_routes,
     auth_routes,
     category_routes,
+    files_routes,
     issue_routes,
     location_routes,
 )
@@ -40,7 +41,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[ADMIN_WEB_ORIGIN],
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -61,6 +62,7 @@ app.include_router(
 )
 app.include_router(issue_routes.router, prefix="/api/issues", tags=["Issues"])
 app.include_router(location_routes.router, prefix="/api/location", tags=["Location"])
+app.include_router(files_routes.router, prefix="/api/files", tags=["Files"])
 app.include_router(
     all_nepal_location_routes.router, prefix="/api/nepal", tags=["Nepal Location"]
 )

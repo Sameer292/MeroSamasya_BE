@@ -1,7 +1,7 @@
 from email_validator import EmailNotValidError, validate_email
 from fastapi import HTTPException, status
 from passlib.context import CryptContext
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -23,7 +23,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def normalize_registration_email(email: str) -> str:
     try:
-        return validate_email(email, check_deliverability=True).normalized
+        return validate_email(email, check_deliverability=False).normalized.lower()
     except EmailNotValidError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address"
@@ -52,7 +52,7 @@ async def create_registered_user(user: UserCreate, email: str, db: AsyncSession)
 
 async def register_user(user: UserCreate, db: AsyncSession):
     email = normalize_registration_email(user.email)
-    existing = await db.execute(select(User).where(User.email == email))
+    existing = await db.execute(select(User).where(func.lower(User.email) == email))
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
@@ -68,7 +68,7 @@ async def register_user(user: UserCreate, db: AsyncSession):
 async def authenticate_user(user: UserLogin, db: AsyncSession):
     try:
         result = await db.execute(
-            select(User).where(User.email == user.email).with_for_update()
+            select(User).where(func.lower(User.email) == user.email.lower()).with_for_update()
         )
         db_user = result.scalar_one_or_none()
     except Exception:

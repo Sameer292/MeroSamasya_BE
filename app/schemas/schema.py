@@ -146,10 +146,10 @@ class CategoryListResponse(BaseModel):
 class IssueCreate(BaseModel):
     category_id: str = Field(min_length=1)
     title: str = Field(min_length=3, max_length=200)
-    description: str = Field(min_length=5)
+    description: Optional[str] = Field(None, min_length=5)
     latitude: float
     longitude: float
-    address: str = Field(min_length=1)
+    address: Optional[str] = Field(None, min_length=1)
 
 
 class IssueUpdate(BaseModel):

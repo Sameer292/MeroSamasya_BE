@@ -5,12 +5,50 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import Issue, IssueMedia, Category, User
 from app.schemas.schema import IssueCreate, IssueUpdate
 from fastapi import HTTPException, status, UploadFile
-from app.core.cloudinary import upload_image
+from app.core.cloudinary import upload_image, is_configured as cloudinary_configured
+from app.core.storage import save_local
 from app.schemas.enum import IssueStatusEnum
 import math
 
 MAX_IMAGES = 3
+MAX_FILE_BYTES = 5 * 1024 * 1024
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
+
+
+def validate_image_files(images: list[UploadFile]):
+    if len(images) > MAX_IMAGES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"You can upload a maximum of {MAX_IMAGES} images.",
+        )
+    for image in images:
+        if image.content_type not in ALLOWED_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file type: {image.content_type}. Allowed: jpeg, jpg, png, webp.",
+            )
+
+
+def check_file_bytes(file_bytes: bytes):
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Empty image file."
+        )
+    if len(file_bytes) > MAX_FILE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Image too large. Maximum size is 5MB per image.",
+        )
+
+
+async def store_issue_photo(
+    file_bytes: bytes, content_type: str | None, citizen_id: str, issue_id: str
+) -> str:
+    # ponytail: Cloudinary when configured, local disk fallback otherwise
+    if cloudinary_configured():
+        return await upload_image(file_bytes, citizen_id, issue_id)
+    name = save_local(file_bytes, "issues", content_type)
+    return f"/api/files/issues/{name}"
 
 
 async def create_issue(
@@ -32,18 +70,7 @@ async def create_issue(
             detail="Please upload at least 1 image.",
         )
 
-    if len(images) > MAX_IMAGES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"You can upload a maximum of {MAX_IMAGES} images.",
-        )
-
-    for image in images:
-        if image.content_type not in ALLOWED_TYPES:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid file type: {image.content_type}. Allowed: jpeg, jpg, png, webp.",
-            )
+    validate_image_files(images)
 
     try:
         issue = Issue(
@@ -60,7 +87,10 @@ async def create_issue(
 
         for image in images:
             file_bytes = await image.read()
-            url = await upload_image(file_bytes, citizen_id, issue.id)
+            check_file_bytes(file_bytes)
+            url = await store_issue_photo(
+                file_bytes, image.content_type, citizen_id, issue.id
+            )
             media = IssueMedia(issue_id=issue.id, url=url)
             db.add(media)
 
@@ -219,17 +249,16 @@ async def update_issue(
             detail="Only open issues can be edited.",
         )
 
-    if len(images) > MAX_IMAGES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"You can upload a maximum of {MAX_IMAGES} images.",
-        )
+    validate_image_files(images)
 
-    for image in images:
-        if image.content_type not in ALLOWED_TYPES:
+    if data.category_id is not None:
+        category = await db.execute(
+            select(Category).where(Category.id == data.category_id)
+        )
+        if not category.scalar_one_or_none():
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid file type: {image.content_type}. Allowed: jpeg, jpg, png, webp.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Category not found.",
             )
 
     try:
@@ -252,7 +281,10 @@ async def update_issue(
             )
             for image in images:
                 file_bytes = await image.read()
-                url = await upload_image(file_bytes, citizen_id, issue_id)
+                check_file_bytes(file_bytes)
+                url = await store_issue_photo(
+                    file_bytes, image.content_type, citizen_id, issue_id
+                )
                 media = IssueMedia(issue_id=issue_id, url=url)
                 db.add(media)
 
@@ -292,8 +324,6 @@ async def get_all_issues(page: int, limit: int, db: AsyncSession):
             select(func.count(Issue.id)).where(Issue.deleted_at.is_(None))
         )
         total = count_result.scalar()
-        print(f"Total issues: {total}")  # ← add this
-        print(f"Offset: {offset}, Limit: {limit}")  # ← add this
         result = await db.execute(
             select(Issue)
             .where(Issue.deleted_at.is_(None))

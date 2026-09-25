@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.services.nepal_location_service import seed_locations
+from app.dependencies.admin_deps import require_admin_write
 from app.schemas.nepal_location_schemas import (
     DistrictResponse,
     LocalLevelResponse,
@@ -23,6 +24,7 @@ router = APIRouter()
 async def seed_location_data(
     data: dict,
     db: AsyncSession = Depends(get_db),
+    _admin=Depends(require_admin_write),
 ):
     await seed_locations(data, db)
     return {"message": "Locations seeded successfully"}

@@ -85,6 +85,14 @@ async def update_category(category_id: str, data: CategoryUpdate, db: AsyncSessi
             detail="Category not found.",
         )
 
+    if data.name is not None and data.name != category.name:
+        existing = await db.execute(select(Category).where(Category.name == data.name))
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Category already exists.",
+            )
+
     try:
         if data.name is not None:
             category.name = data.name

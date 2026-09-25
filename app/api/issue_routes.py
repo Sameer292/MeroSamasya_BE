@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, Query, status, UploadFile, File, Form
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.schema import (
@@ -7,6 +7,7 @@ from app.schemas.schema import (
     DeleteResponse,
     IssueUpdate,
     PaginatedIssueResponse,
+    CategoryListResponse,
 )
 from app.services.issue_service import (
     create_issue,
@@ -17,6 +18,7 @@ from app.services.issue_service import (
     get_all_issues,
     get_issues_by_location,
 )
+from app.services.category_service import get_categories
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
 
@@ -53,8 +55,8 @@ async def open_issue(
     "/me", response_model=PaginatedIssueResponse, status_code=status.HTTP_200_OK
 )
 async def my_issues(
-    page: int = 1,
-    limit: int = 10,
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -62,11 +64,19 @@ async def my_issues(
 
 
 @router.get(
+    "/categories", response_model=CategoryListResponse, status_code=status.HTTP_200_OK
+)
+async def issue_categories(db: AsyncSession = Depends(get_db)):
+    # ponytail: alias the mobile client actually calls (GET /api/issues/categories)
+    return await get_categories(db)
+
+
+@router.get(
     "/all", response_model=PaginatedIssueResponse, status_code=status.HTTP_200_OK
 )
 async def all_issues(
-    page: int = 1,
-    limit: int = 10,
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
     return await get_all_issues(page, limit, db)
@@ -78,8 +88,8 @@ async def all_issues(
     status_code=status.HTTP_200_OK,
 )
 async def issues_by_location(
-    page: int = 1,
-    limit: int = 10,
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

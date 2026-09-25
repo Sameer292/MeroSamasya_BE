@@ -15,6 +15,7 @@ from app.services.category_service import (
     seed_categories,
 )
 from app.core.database import get_db
+from app.dependencies.admin_deps import require_admin_write
 
 router = APIRouter()
 
@@ -25,7 +26,11 @@ async def list_categories(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
-async def add_category(data: CategoryCreate, db: AsyncSession = Depends(get_db)):
+async def add_category(
+    data: CategoryCreate,
+    db: AsyncSession = Depends(get_db),
+    _admin=Depends(require_admin_write),
+):
     return await create_category(data, db)
 
 
@@ -36,6 +41,7 @@ async def edit_category(
     category_id: str,
     data: CategoryUpdate,
     db: AsyncSession = Depends(get_db),
+    _admin=Depends(require_admin_write),
 ):
     return await update_category(category_id, data, db)
 
@@ -46,10 +52,13 @@ async def edit_category(
 async def remove_category(
     category_id: str,
     db: AsyncSession = Depends(get_db),
+    _admin=Depends(require_admin_write),
 ):
     return await delete_category(category_id, db)
 
 
 @router.post("/seed", status_code=status.HTTP_201_CREATED)
-async def seed(db: AsyncSession = Depends(get_db)):
+async def seed(
+    db: AsyncSession = Depends(get_db), _admin=Depends(require_admin_write)
+):
     return await seed_categories(db)

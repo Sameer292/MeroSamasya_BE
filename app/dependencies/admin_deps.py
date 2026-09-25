@@ -33,3 +33,13 @@ async def require_admin(
 async def verify_admin_origin(request: Request) -> None:
     if request.headers.get("origin") != ADMIN_WEB_ORIGIN:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid origin")
+
+
+async def require_admin_write(
+    request: Request,
+    user: Annotated[User, Depends(require_admin)],
+    credentials: BearerCredentials,
+) -> User:
+    if credentials is None:
+        await verify_admin_origin(request)
+    return user
