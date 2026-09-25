@@ -123,18 +123,11 @@ class RefreshTokenRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
-    confirm_new_password: str
 
     @field_validator("new_password")
     @classmethod
     def validate_new_password(cls, v):
         return check_password_strength(v)
-
-    @model_validator(mode="after")
-    def passwords_match(self):
-        if self.new_password != self.confirm_new_password:
-            raise ValueError("Passwords do not match")
-        return self
 
 
 class UpdateProfileRequest(BaseModel):
@@ -215,8 +208,8 @@ class IssueData(BaseModel):
     longitude: float
     address: Optional[str] = None
     media: list[IssueMediaResponse] = []
-    vote_count: int = 0
-    has_voted: bool = False
+    upvote_count: int = 0
+    has_upvoted: bool = False
     local_level_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -267,10 +260,14 @@ class PaginatedIssueResponse(BaseModel):
     data: PaginatedIssueData
 
 
-class VoteResponse(BaseModel):
+class UpvoteData(BaseModel):
+    upvoted: bool
+    upvote_count: int
+
+
+class UpvoteResponse(BaseModel):
     message: str
-    vote_count: int
-    has_voted: bool
+    data: UpvoteData
 
 
 class NotificationData(BaseModel):
@@ -302,10 +299,69 @@ class NotificationResponse(BaseModel):
     data: NotificationData
 
 
-class ReadAllData(BaseModel):
-    updated: int
+class KycDocumentLinks(BaseModel):
+    selfie: str
+    front: str
+    back: str
 
 
-class ReadAllResponse(BaseModel):
+class KycData(BaseModel):
+    id: str
+    full_name: str
+    citizenship_number: str
+    gender: str
+    date_of_birth: datetime
+    issued_date: datetime
+    ward_number: str
+    tole: Optional[str] = None
+    province_name: str
+    district_name: str
+    municipality_name: str
+    local_level_id: Optional[str] = None
+    status: str
+    reviewer_note: Optional[str] = None
+    documents: KycDocumentLinks
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class KycResponse(BaseModel):
     message: str
-    data: ReadAllData
+    data: KycData
+
+
+class KycListData(BaseModel):
+    meta: PaginationMeta
+    submissions: list[KycData]
+
+
+class KycListResponse(BaseModel):
+    message: str
+    data: KycListData
+
+
+class KycReviewRequest(BaseModel):
+    status: str = Field(pattern=r"^(approved|rejected)$")
+    note: Optional[str] = None
+
+
+class StatusUpdateRequest(BaseModel):
+    status: IssueStatusEnum
+
+
+class AdminOverviewData(BaseModel):
+    open: int
+    in_progress: int
+    resolved: int
+    closed: int
+    total_issues: int
+    total_users: int
+    kyc_pending: int
+
+
+class AdminOverviewResponse(BaseModel):
+    message: str
+    data: AdminOverviewData

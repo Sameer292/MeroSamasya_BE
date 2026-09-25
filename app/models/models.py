@@ -8,7 +8,7 @@ from sqlalchemy.orm import column_property, foreign, relationship
 from app.core.database import Base
 from app.models.admin_auth import AdminMembership
 from app.models.nepal_location_models import LocalLevel
-from app.schemas.enum import AccountStatusEnum, IssueStatusEnum, UserRole
+from app.schemas.enum import AccountStatusEnum, IssueStatusEnum, KycStatusEnum, UserRole
 
 
 def utcnow():
@@ -151,3 +151,37 @@ class Notification(Base):
     issue_id = Column(String, nullable=True)
     read = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
+class KycSubmission(Base):
+    __tablename__ = "KycSubmissions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(
+        String, ForeignKey("Users.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    full_name = Column(String, nullable=False)
+    citizenship_number = Column(String, nullable=False, index=True)
+    gender = Column(String, nullable=False)
+    date_of_birth = Column(DateTime(timezone=True), nullable=False)
+    issued_date = Column(DateTime(timezone=True), nullable=False)
+    ward_number = Column(String, nullable=False)
+    tole = Column(String, nullable=True)
+    province_name = Column(String, nullable=False)
+    district_name = Column(String, nullable=False)
+    municipality_name = Column(String, nullable=False)
+    local_level_id = Column(String, nullable=True)
+    # ponytail: local file names only, served authorized, never public URLs
+    selfie_path = Column(Text, nullable=False)
+    doc_front_path = Column(Text, nullable=False)
+    doc_back_path = Column(Text, nullable=False)
+    status = Column(
+        Enum(KycStatusEnum, name="kyc_status_enum", create_type=False),
+        nullable=False,
+        default=KycStatusEnum.pending,
+    )
+    reviewer_note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user = relationship("User")
