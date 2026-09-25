@@ -19,6 +19,7 @@ from app.core.admin_config import ADMIN_WEB_ORIGIN
 from app.core.database import engine, Base, AsyncSessionLocal
 from app.core.migrations import run_startup_migrations
 from app.services.category_service import ensure_default_categories
+from app.services.nepal_location_service import ensure_bundled_locations
 
 
 @asynccontextmanager
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
     await run_startup_migrations(engine)
     async with AsyncSessionLocal() as session:
         await ensure_default_categories(session)
+        await ensure_bundled_locations(session)
     yield
 
 
