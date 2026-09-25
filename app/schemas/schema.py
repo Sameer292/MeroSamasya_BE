@@ -271,3 +271,41 @@ class VoteResponse(BaseModel):
     message: str
     vote_count: int
     has_voted: bool
+
+
+class NotificationData(BaseModel):
+    id: str
+    type: str
+    title: str
+    message: str
+    read: bool
+    issue_id: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class NotificationListData(BaseModel):
+    meta: PaginationMeta
+    unread_count: int
+    notifications: list[NotificationData]
+
+
+class NotificationListResponse(BaseModel):
+    message: str
+    data: NotificationListData
+
+
+class NotificationResponse(BaseModel):
+    message: str
+    data: NotificationData
+
+
+class ReadAllData(BaseModel):
+    updated: int
+
+
+class ReadAllResponse(BaseModel):
+    message: str
+    data: ReadAllData

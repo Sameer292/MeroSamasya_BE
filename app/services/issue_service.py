@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import Issue, IssueMedia, Category, User, Upvote
 from app.services.location_service import get_level_or_404
+from app.services.notification_service import notify
 from app.schemas.schema import IssueCreate, IssueUpdate
 from fastapi import HTTPException, status, UploadFile
 from app.core.cloudinary import upload_image, is_configured as cloudinary_configured
@@ -497,6 +498,16 @@ async def toggle_vote(issue_id: str, user_id: str, db: AsyncSession):
             db.add(Upvote(user_id=user_id, issue_id=issue.id))
             has_voted = True
             message = "Upvoted successfully"
+            # ponytail: no self-upvote spam, owner learns from vote_count
+            if issue.citizen_id and issue.citizen_id != user_id:
+                notify(
+                    db,
+                    issue.citizen_id,
+                    "upvote",
+                    "New upvote",
+                    f"Your report '{issue.title}' received an upvote.",
+                    issue_id=issue.id,
+                )
         await db.commit()
     except IntegrityError:
         # ponytail: double-tap race lost, the other request won

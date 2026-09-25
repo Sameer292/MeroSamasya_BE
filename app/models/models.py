@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, DateTime, Enum, Float, ForeignKey, String, Text, UniqueConstraint,
+    Boolean, Column, DateTime, Enum, Float, ForeignKey, String, Text, UniqueConstraint,
     cast, func, select,
 )
 from sqlalchemy.orm import column_property, foreign, relationship
@@ -136,3 +136,18 @@ class Upvote(Base):
 
     user = relationship("User", back_populates="upvotes")
     issue = relationship("Issue", back_populates="upvotes")
+
+
+class Notification(Base):
+    __tablename__ = "Notifications"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(
+        String, ForeignKey("Users.id", ondelete="CASCADE"), nullable=False
+    )
+    type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    issue_id = Column(String, nullable=True)
+    read = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)

@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from app.models.models import User
 from app.schemas.schema import UserCreate, UserLogin
 from app.services.account_access import require_active_account
+from app.services.notification_service import notify
 from app.services.refresh_tokens import issue_token_pair
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
@@ -41,6 +42,14 @@ async def create_registered_user(user: UserCreate, email: str, db: AsyncSession)
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
+        notify(
+            db,
+            str(new_user.id),
+            "system",
+            "Welcome to MeroSamasya",
+            "Report issues in your area and track them here.",
+        )
+        await db.commit()
     except Exception:
         await db.rollback()
         raise HTTPException(
