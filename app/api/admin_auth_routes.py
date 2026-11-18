@@ -8,10 +8,8 @@ from app.core.database import get_db
 from app.schemas.admin_auth import AdminProfileResponse
 from app.schemas.schema import UserLogin
 from app.services.admin_sessions import (
-    SESSION_MAX_AGE,
     create_session,
-    get_session,
-    refresh_session,
+    get_session_profile,
     revoke_session,
 )
 from app.services.auth_service import authenticate_user
@@ -33,20 +31,13 @@ async def login_admin(credentials: UserLogin, db: Database, session: SessionCook
     user = await authenticate_user(credentials, db)
     token = await create_session(db, user, session)
     response = Response(status_code=204, headers=NO_STORE)
-    response.set_cookie(ADMIN_COOKIE_NAME, token, max_age=SESSION_MAX_AGE, **COOKIE_OPTIONS)
+    response.set_cookie(ADMIN_COOKIE_NAME, token, **COOKIE_OPTIONS)
     return response
 
 
 @router.get("/me", response_model=AdminProfileResponse)
 async def get_admin(response: Response, db: Database, session: SessionCookie = None):
-    _, profile = await get_session(db, session)
-    response.headers.update(NO_STORE)
-    return {"data": profile}
-
-
-@router.post("/refresh", response_model=AdminProfileResponse, dependencies=[Depends(verify_origin)])
-async def refresh_admin(response: Response, db: Database, session: SessionCookie = None):
-    profile = await refresh_session(db, session)
+    profile = await get_session_profile(db, session)
     response.headers.update(NO_STORE)
     return {"data": profile}
 

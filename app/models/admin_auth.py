@@ -21,5 +21,7 @@ class AdminSession(Base):
     user_id: Mapped[str] = mapped_column(
         ForeignKey("Users.id", ondelete="CASCADE"), index=True
     )
-    access_expires_at: Mapped[int] = mapped_column(BigInteger)
-    expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
+    # Retain the existing non-null columns for deployed databases.
+    # Zero identifies a session issued under the no-timeout policy.
+    access_expires_at: Mapped[int] = mapped_column(BigInteger, default=0)
+    expires_at: Mapped[int] = mapped_column(BigInteger, default=0, index=True)
