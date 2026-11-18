@@ -9,6 +9,7 @@ from app.models.models import User
 from app.schemas.schema import UserCreate, UserLogin
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
+from starlette.concurrency import run_in_threadpool
 from email_validator import validate_email, EmailNotValidError
 from app.schemas.enum import AccountStatusEnum
 
@@ -87,7 +88,7 @@ async def register_user(user: UserCreate, db: AsyncSession):
     }
 
 
-async def login_user(user: UserLogin, db: AsyncSession):
+async def authenticate_user(user: UserLogin, db: AsyncSession):
     try:
         result = await db.execute(select(User).where(User.email == user.email))
         db_user = result.scalar_one_or_none()
@@ -97,7 +98,9 @@ async def login_user(user: UserLogin, db: AsyncSession):
             detail="Login failed. Please try again.",
         )
 
-    if not db_user or not verify_password(user.password, str(db_user.password)):
+    if not db_user or not await run_in_threadpool(
+        verify_password, user.password, str(db_user.password)
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
@@ -107,6 +110,11 @@ async def login_user(user: UserLogin, db: AsyncSession):
             status_code=status.HTTP_403_FORBIDDEN, detail="Account not active"
         )
 
+    return db_user
+
+
+async def login_user(user: UserLogin, db: AsyncSession):
+    db_user = await authenticate_user(user, db)
     return {
         "message": "Login successful",
         "data": {
