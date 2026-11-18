@@ -1,5 +1,7 @@
+from typing import Annotated
+
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -8,37 +10,40 @@ from app.models.models import User
 from app.services.auth_service import decode_token
 import jwt
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
+BearerCredentials = Annotated[HTTPAuthorizationCredentials | None, Depends(security)]
 
 
-async def get_current_user(
-    credentials=Depends(security), db: AsyncSession = Depends(get_db)
-):
+def get_access_token_subject(token: str) -> str:
     try:
-        payload = decode_token(credentials.credentials)
-        if payload.get("refresh"):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-            )
-        result = await db.execute(
-            select(User)
-            .where(User.id == payload.get("sub"))
-            .options(selectinload(User.location))
-        )
-        user = result.scalar_one_or_none()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
-            )
-        return user
-
-    except HTTPException:
-        raise
+        payload = decode_token(token)
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired"
         )
-    except Exception:
+    except jwt.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
+
+    subject = payload.get("sub")
+    if payload.get("refresh") or not isinstance(subject, str) or not subject:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
+    return subject
+
+
+async def get_current_user(
+    credentials: BearerCredentials, db: AsyncSession = Depends(get_db)
+) -> User:
+    if credentials is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user_id = get_access_token_subject(credentials.credentials)
+    user = await db.scalar(
+        select(User).where(User.id == user_id).options(selectinload(User.location))
+    )
+    if user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
+    return user
