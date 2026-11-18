@@ -1,19 +1,14 @@
 from hashlib import sha256
 from secrets import token_urlsafe
-from time import time
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin_auth import AdminMembership, AdminSession
 from app.models.models import User
 from app.schemas.admin_auth import AdminProfile
 from app.schemas.enum import AccountStatusEnum
-from app.services.auth_service import ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRY_DAYS
-
-SESSION_MAX_AGE = REFRESH_TOKEN_EXPIRY_DAYS * 86400
-ACCESS_MAX_AGE = ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
 
 def digest_token(token: str) -> str:
@@ -42,48 +37,22 @@ async def create_session(db: AsyncSession, user: User, previous_token: str | Non
     await get_admin_profile(db, user)
     await revoke_session(db, previous_token)
     token = token_urlsafe(32)
-    now = int(time())
-    await db.execute(delete(AdminSession).where(AdminSession.expires_at <= now))
-    db.add(AdminSession(
-        token_digest=digest_token(token),
-        user_id=user.id,
-        access_expires_at=min(now + ACCESS_MAX_AGE, now + SESSION_MAX_AGE),
-        expires_at=now + SESSION_MAX_AGE,
-    ))
+    db.add(AdminSession(token_digest=digest_token(token), user_id=user.id))
     await db.commit()
     return token
 
 
-async def get_session(db: AsyncSession, token: str | None, *, allow_refresh: bool = False):
+async def get_session_profile(db: AsyncSession, token: str | None) -> AdminProfile:
     if not token:
-        raise HTTPException(401, "Admin session required")
-    result = await db.execute(
-        select(AdminSession, User)
-        .join(User, AdminSession.user_id == User.id)
-        .where(AdminSession.token_digest == digest_token(token))
-    )
-    record = result.one_or_none()
-    if record is None:
-        raise HTTPException(401, "Admin session expired")
-    session, user = record
-    now = int(time())
-    if session.expires_at <= now or (session.access_expires_at <= now and not allow_refresh):
-        raise HTTPException(401, "Admin session expired")
-    return session, await get_admin_profile(db, user)
-
-
-async def refresh_session(db: AsyncSession, token: str | None) -> AdminProfile:
-    session, profile = await get_session(db, token, allow_refresh=True)
-    now = int(time())
-    updated = await db.execute(
-        update(AdminSession)
+        raise HTTPException(401, "Admin sign-in required")
+    user = await db.scalar(
+        select(User)
+        .join(AdminSession, AdminSession.user_id == User.id)
         .where(
-            AdminSession.token_digest == session.token_digest,
-            AdminSession.expires_at > now,
+            AdminSession.token_digest == digest_token(token),
+            AdminSession.expires_at == 0,
         )
-        .values(access_expires_at=min(now + ACCESS_MAX_AGE, session.expires_at))
     )
-    if not updated.rowcount:
-        raise HTTPException(401, "Admin session expired")
-    await db.commit()
-    return profile
+    if user is None:
+        raise HTTPException(401, "Admin sign-in required")
+    return await get_admin_profile(db, user)
