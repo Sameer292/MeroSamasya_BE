@@ -11,8 +11,8 @@ from app.schemas.schema import (
 from app.services.auth_service import (
     register_user,
     login_user,
-    refresh_access_token,
 )
+from app.services.refresh_tokens import refresh_access_token, revoke_refresh_token
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
 
@@ -40,5 +40,10 @@ async def login(user: UserLogin, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/refresh", response_model=TokenResponse, status_code=status.HTTP_200_OK)
-async def refresh(request: RefreshTokenRequest):
-    return await refresh_access_token(request.refresh_token)
+async def refresh(request: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    return await refresh_access_token(request.refresh_token, db)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(request: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    await revoke_refresh_token(request.refresh_token, db)
