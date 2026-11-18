@@ -1,6 +1,12 @@
 from enum import Enum
 
 
+class UserRole(str, Enum):
+    citizen = "citizen"
+    admin = "admin"
+    superadmin = "superadmin"
+
+
 class AccountStatusEnum(str, Enum):
     active = "active"
     inactive = "inactive"

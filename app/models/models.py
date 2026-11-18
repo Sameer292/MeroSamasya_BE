@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, Text, Enum, ForeignKey, Float
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, DateTime, Enum, Float, ForeignKey, String, Text, func, select
+from sqlalchemy.orm import column_property, relationship
 from app.core.database import Base
-from app.schemas.enum import AccountStatusEnum, IssueStatusEnum
+from app.models.admin_auth import AdminMembership
+from app.schemas.enum import AccountStatusEnum, IssueStatusEnum, UserRole
 
 
 def utcnow():
@@ -33,6 +34,15 @@ class User(Base):
     __tablename__ = "Users"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    role = column_property(
+        func.coalesce(
+            select(AdminMembership.role)
+            .where(AdminMembership.user_id == id)
+            .correlate_except(AdminMembership)
+            .scalar_subquery(),
+            UserRole.citizen.value,
+        )
+    )
     email = Column(String, nullable=False, unique=True)
     name = Column(String, nullable=True)
     password = Column(String, nullable=False)
