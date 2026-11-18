@@ -28,7 +28,28 @@ session cookies if the account is later promoted again.
 
 Protected admin endpoints accept the portal's session cookie or an access
 token as a bearer credential. Requests without valid credentials receive
-401. Authenticated citizens receive 403. Admin sessions have no server-side
-timeout. Logout revokes the session in the database. The browser may clear
-its cookie when it closes. Sign in again once after upgrading from the
-earlier expiring-session implementation.
+401. Authenticated citizens receive 403. Inactive and suspended accounts
+receive 403 on login, authenticated requests, and token refresh. Missing
+and deleted accounts receive 401. The check uses the current database status
+on each request, so it also applies to credentials issued before a status change.
+Reactivation restores access for credentials that are still valid.
+
+`POST /api/auth/admin/logout` requires an active administrator and the
+configured portal origin. It revokes the presented portal session cookie and
+clears it from the browser. Portal sessions have no server-side timeout.
+Bearer-token clients use the JWT logout endpoint below.
+
+## JWT refresh and logout
+
+`POST /api/auth/refresh` consumes the submitted refresh token and returns
+a new access and refresh token pair. Reusing a consumed or revoked token
+returns 401 for an active account.
+
+`POST /api/auth/logout` accepts `{"refresh_token": "..."}` and returns 204
+after revoking that refresh token. Repeating logout with the same signed,
+unexpired token is safe. Other logins remain active. Existing access tokens
+remain usable until expiry, subject to the account-status check.
+
+The app creates the `RefreshTokens` table on startup. Refresh tokens issued
+before this change require a fresh login. Logout and refresh share the same
+stored token record, so a token can only be consumed once.

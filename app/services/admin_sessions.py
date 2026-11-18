@@ -1,4 +1,3 @@
-from hashlib import sha256
 from secrets import token_urlsafe
 
 from fastapi import HTTPException
@@ -7,10 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin_auth import AdminSession
 from app.models.models import User
-
-
-def digest_token(token: str) -> str:
-    return sha256(token.encode()).hexdigest()
+from app.services.account_access import require_active_account
+from app.services.token_digest import digest_token
 
 
 async def revoke_session(db: AsyncSession, token: str | None):
@@ -39,4 +36,4 @@ async def get_session_user(db: AsyncSession, token: str) -> User:
     )
     if user is None:
         raise HTTPException(401, "Admin sign-in required")
-    return user
+    return require_active_account(user)
