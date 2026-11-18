@@ -1,11 +1,14 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.api import (
+    admin_auth_routes,
     all_nepal_location_routes,
     auth_routes,
     issue_routes,
     location_routes,
 )
+from app.core.admin_config import ADMIN_WEB_ORIGIN
 from app.core.database import engine, Base
 
 
@@ -29,11 +32,21 @@ app = FastAPI(
 )
 
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[ADMIN_WEB_ORIGIN],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
+
+
 @app.get("/", tags=["Root"])
 def root():
     return {"message": "Working"}
 
 
+app.include_router(admin_auth_routes.router, prefix="/api/auth/admin", tags=["Admin Authentication"])
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(issue_routes.router, prefix="/api/issues", tags=["Issues"])
 app.include_router(location_routes.router, prefix="/api/location", tags=["Location"])
