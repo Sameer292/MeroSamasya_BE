@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from fastapi import HTTPException, status
 from starlette.concurrency import run_in_threadpool
 from email_validator import validate_email, EmailNotValidError
-from app.schemas.enum import AccountStatusEnum
+from app.services.account_access import require_active_account
 
 load_dotenv(".env")
 
@@ -105,12 +105,7 @@ async def authenticate_user(user: UserLogin, db: AsyncSession):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
 
-    if db_user.account_status != AccountStatusEnum.active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Account not active"
-        )
-
-    return db_user
+    return require_active_account(db_user)
 
 
 async def login_user(user: UserLogin, db: AsyncSession):

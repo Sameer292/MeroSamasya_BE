@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.models.models import User
+from app.services.account_access import require_active_account
 from app.services.auth_service import decode_token
 import jwt
 
@@ -44,6 +45,4 @@ async def get_current_user(
     user = await db.scalar(
         select(User).where(User.id == user_id).options(selectinload(User.location))
     )
-    if user is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
-    return user
+    return require_active_account(user)
