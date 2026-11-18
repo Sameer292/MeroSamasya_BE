@@ -39,6 +39,26 @@ configured portal origin. It revokes the presented portal session cookie and
 clears it from the browser. Portal sessions have no server-side timeout.
 Bearer-token clients use the JWT logout endpoint below.
 
+## Change your password
+
+Use `POST /api/auth/change-password` with an access token or
+`POST /api/auth/admin/change-password` from the configured admin portal origin.
+The admin endpoint accepts an admin session cookie or an admin access token.
+Both endpoints change the authenticated account's password and accept this JSON
+body.
+
+```json
+{
+  "current_password": "OldPassword1",
+  "new_password": "NewPassword2",
+  "confirm_new_password": "NewPassword2"
+}
+```
+
+A successful change returns 204 and revokes the account's refresh tokens and
+admin sessions. The admin endpoint also clears the session cookie. Existing
+access tokens remain valid until expiry, subject to the account-status check.
+
 ## JWT refresh and logout
 
 `POST /api/auth/refresh` consumes the submitted refresh token and returns

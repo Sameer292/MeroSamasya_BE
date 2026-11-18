@@ -12,9 +12,11 @@ from app.dependencies.admin_deps import (
 )
 from app.models.models import User
 from app.schemas.admin_auth import AdminProfileResponse
+from app.schemas.password_change import PasswordChangeRequest
 from app.schemas.schema import UserLogin
 from app.services.admin_sessions import create_session, revoke_session
 from app.services.auth_service import authenticate_user
+from app.services.password_change import change_password
 
 router = APIRouter()
 COOKIE_OPTIONS = {"secure": ADMIN_COOKIE_SECURE, "httponly": True, "samesite": "lax"}
@@ -46,6 +48,18 @@ async def get_admin(response: Response, user: Annotated[User, Depends(require_ad
 async def logout_admin(db: Database, session: AdminSessionCookie = None):
     await revoke_session(db, session)
     await db.commit()
+    response = Response(status_code=204, headers=NO_STORE)
+    response.delete_cookie(ADMIN_COOKIE_NAME, **COOKIE_OPTIONS)
+    return response
+
+
+@router.post(
+    "/change-password", status_code=204, dependencies=[Depends(verify_admin_origin)]
+)
+async def change_admin_password(
+    request: PasswordChangeRequest, db: Database, user: Annotated[User, Depends(require_admin)]
+):
+    await change_password(db, user, request)
     response = Response(status_code=204, headers=NO_STORE)
     response.delete_cookie(ADMIN_COOKIE_NAME, **COOKIE_OPTIONS)
     return response
