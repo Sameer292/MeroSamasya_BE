@@ -39,6 +39,23 @@ configured portal origin. It revokes the presented portal session cookie and
 clears it from the browser. Portal sessions have no server-side timeout.
 Bearer-token clients use the JWT logout endpoint below.
 
+## Admin subscribers
+
+`GET /api/admin/subscribers` lists citizen accounts. It accepts `search` for a
+case-insensitive substring match on name, email, or phone, and `account_status`
+for `active`, `inactive`, `suspended`, or `deleted`. The default includes all
+four states. Accounts with a deletion timestamp appear as deleted.
+
+`GET /api/admin/subscribers/{subscriber_id}` returns the citizen profile and
+paginated `data.issue_history`. Both endpoints require an active admin or
+superadmin and return `reported_count` and `resolved_count`. Counts and history
+include issues that have not been soft-deleted. Resolved counts include issues
+with status `resolved`. The `kyc_status` field is null until KYC data is available.
+
+Both endpoints accept a one-based `page` and a `limit` of 1 through 100, defaulting
+to 1 and 10. Accounts and issues are ordered newest first, with ID breaking ties.
+Pagination totals are returned even when the requested page is empty.
+
 ## JWT refresh and logout
 
 `POST /api/auth/refresh` consumes the submitted refresh token and returns
