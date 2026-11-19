@@ -8,8 +8,8 @@ from pydantic import (
     field_validator,
 )
 from typing import Annotated, Optional
-from datetime import datetime
-from .enum import AccountStatusEnum, IssueStatusEnum, UserRole
+from datetime import date, datetime
+from .enum import AccountStatusEnum, IssueStatusEnum, KycGenderEnum, UserRole
 from .password_policy import validate_password_strength
 
 FullName = Annotated[
@@ -313,9 +313,9 @@ class KycData(BaseModel):
     id: str
     full_name: str
     citizenship_number: str
-    gender: str
-    date_of_birth: datetime
-    issued_date: datetime
+    gender: KycGenderEnum
+    date_of_birth: date
+    issued_date: date
     ward_number: str
     tole: Optional[str] = None
     province_name: str

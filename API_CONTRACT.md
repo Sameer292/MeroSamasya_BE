@@ -93,13 +93,19 @@ legacy behavior (new files replace all; no files touches nothing). Explicit
 
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| POST | `/api/kyc/submit` | multipart: `fullName, citizenshipNumber, gender (male/female/other), dateOfBirth (ISO), issuedDate (ISO), wardNumber, tole?, province/district/municipality (JSON `{id, name}` from this API), files `selfiePhoto, documentFrontPhoto, documentBackPhoto` (images, ≤5 MB) | 201 `{status: pending}`. Area id is verified against live geo data (400 on mismatch). Resubmit blocked while pending/approved (409); allowed after rejection |
+| POST | `/api/kyc/submit` | multipart: `fullName`, `citizenshipNumber`, `gender` (`male`, `female`, `other`), `dateOfBirth`, `issuedDate` (both `YYYY-MM-DD`), `wardNumber` (positive whole number), `tole` (optional), `province`, `district`, `municipality` (JSON objects with integer `id` and `name` from the Nepal API), files `selfiePhoto`, `documentFrontPhoto`, `documentBackPhoto` (images, ≤5 MB) | 201 with pending status. Resubmission returns 409 while pending or approved and is allowed after rejection. |
 | GET | `/api/kyc/me` | — | own submission + status; `documents: {selfie, front, back}` link paths, never file paths |
 | GET | `/api/kyc/documents/{selfie\|front\|back}[?user_id=]` | — | Private file bytes. Citizens can read their own documents. Admins can read a submission for the specified user. |
 
 Identity documents are stored on local disk only and never exposed as public
 URLs. On resubmission, new files commit first and old files are deleted only
 after the commit succeeds.
+
+The issue date must be on or after the date of birth, and both dates must be
+on or before today's date in Nepal. The API checks that the area IDs and names
+match the same municipality, district, and province. Invalid values use field
+errors with `detail[].loc` set to `["body", "<form field>"]`. KYC responses
+return `date_of_birth` and `issued_date` as `YYYY-MM-DD`.
 
 ## Notifications (`/api/notifications`, Bearer required)
 

@@ -32,3 +32,9 @@ class KycStatusEnum(str, Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
+
+
+class KycGenderEnum(str, Enum):
+    male = "male"
+    female = "female"
+    other = "other"

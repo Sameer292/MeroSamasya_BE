@@ -38,7 +38,7 @@ def check(name, cond):
 async def main():
     import httpx
     import jwt
-    from sqlalchemy import select
+    from sqlalchemy import select, text
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
         async_sessionmaker,
@@ -490,7 +490,6 @@ async def main():
         H = {"Authorization": f"Bearer {r.json()['data']['access_token']}"}
 
         # --- kyc (area chain validated against live Nepal data) ---
-        import json as jsonlib2  # noqa: F401
         provs = (await c.get("/api/nepal/provinces")).json()
         prov = next(p for p in provs if p["name"] == "बागमती प्रदेश")
         dists = (await c.get(f"/api/nepal/provinces/{prov['id']}/districts")).json()
@@ -502,24 +501,57 @@ async def main():
         dist_j = jsonlib.dumps({"id": dist["id"], "name": dist["name"]})
         kyc_files = [("selfiePhoto", IMG), ("documentFrontPhoto", IMG2), ("documentBackPhoto", IMG)]
         kyc_data = {"fullName": "Test User", "citizenshipNumber": "12-34-56-78901",
-                    "gender": "male", "dateOfBirth": "1990-01-01T00:00:00.000Z",
-                    "issuedDate": "2010-05-05T00:00:00.000Z", "wardNumber": "5",
+                    "gender": "other", "dateOfBirth": "1990-01-01",
+                    "issuedDate": "2010-01-01", "wardNumber": "5",
                     "province": prov_j, "district": dist_j, "municipality": area}
         r = await c.post("/api/kyc/submit", headers=H, data=kyc_data, files=kyc_files)
         check("kyc submit 201 pending", r.status_code == 201 and r.json()["data"]["status"] == "pending")
+        check("kyc returns Other and January 1 calendar dates",
+              (r.json()["data"]["gender"], r.json()["data"]["date_of_birth"],
+               r.json()["data"]["issued_date"]) == ("other", "1990-01-01", "2010-01-01"))
         check("kyc exposes links not paths", "documents" in r.json()["data"]
               and "selfie_path" not in r.json()["data"])
-        bad = dict(kyc_data, district=jsonlib.dumps({"id": dist["id"], "name": "Wrong District"}))
-        r = await c.post("/api/kyc/submit", headers=H2, data=bad, files=kyc_files)
-        check("area mismatch 400", r.status_code == 400)
-        bad2 = dict(kyc_data, municipality="[1,2]")
-        # use voter2 (no submission yet) for payload-shape errors
-        r = await c.post("/api/kyc/submit", headers=H2, data=bad2, files=kyc_files)
-        check("non-object area 400", r.status_code == 400)
+        for field, value in [
+            ("wardNumber", "ABC"),
+            ("wardNumber", "0"),
+            ("wardNumber", "2.5"),
+            ("municipality", "[1,2]"),
+            ("municipality", jsonlib.dumps({"name": lvl["name"]})),
+            ("municipality", jsonlib.dumps({"id": 999999, "name": lvl["name"]})),
+            ("municipality", jsonlib.dumps({"id": True, "name": lvl["name"]})),
+            ("district", jsonlib.dumps({"id": dist["id"], "name": "Wrong District"})),
+            ("district", jsonlib.dumps({"id": dist["id"] + 1, "name": dist["name"]})),
+            ("province", jsonlib.dumps({"id": prov["id"] + 1, "name": prov["name"]})),
+            ("dateOfBirth", "1990-02-30"),
+            ("dateOfBirth", "1989-12-31T18:15:00.000Z"),
+            ("issuedDate", "1989-12-31"),
+            ("issuedDate", "9999-12-31"),
+        ]:
+            r = await c.post("/api/kyc/submit", headers=H2, data={**kyc_data, field: value}, files=kyc_files)
+            check(f"invalid KYC {field} {value!r} returns a field error",
+                  r.status_code == 400 and r.json()["detail"][0]["loc"] == ["body", field])
+        r = await c.post("/api/kyc/submit", headers=H2, data={**kyc_data, "gender": "others"}, files=kyc_files)
+        check("gender outside the shared enum returns a field error",
+              r.status_code == 422 and r.json()["detail"][0]["loc"] == ["body", "gender"])
         r = await c.post("/api/kyc/submit", headers=H, data=kyc_data, files=kyc_files)
         check("resubmit while pending 409", r.status_code == 409)
         r = await c.get("/api/kyc/me", headers=H)
-        check("kyc me 200", r.status_code == 200)
+        check("kyc me returns both January 1 dates", r.status_code == 200
+              and r.json()["data"]["date_of_birth"] == "1990-01-01"
+              and r.json()["data"]["issued_date"] == "2010-01-01")
+        async with engine.begin() as conn:
+            raw_dates = text('SELECT date_of_birth, issued_date FROM "KycSubmissions"')
+            check("kyc stores only calendar dates",
+                  (await conn.execute(raw_dates)).one() == ("1990-01-01", "2010-01-01"))
+            await conn.execute(text(
+                'UPDATE "KycSubmissions" SET date_of_birth = :dob, issued_date = :issued'
+            ), {"dob": "1989-12-31 18:15:00.000000", "issued": "2010-01-01 00:00:00.000000"})
+        for _ in range(2):
+            await run_startup_migrations(engine)
+        r = await c.get("/api/kyc/me", headers=H)
+        check("kyc migration recovers Kathmandu dates and is idempotent", r.status_code == 200
+              and r.json()["data"]["date_of_birth"] == "1990-01-01"
+              and r.json()["data"]["issued_date"] == "2010-01-01")
         r = await c.get("/api/kyc/documents/selfie", headers=H)
         check("owner doc 200 image", r.status_code == 200)
         r = await c.get("/api/kyc/documents/selfie", headers=H2, params={"user_id": owner_id})

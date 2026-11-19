@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Boolean, Column, DateTime, Enum, Float, ForeignKey, String, Text, UniqueConstraint,
+    Boolean, Column, Date, DateTime, Enum, Float, ForeignKey, String, Text, UniqueConstraint,
     cast, func, select,
 )
 from sqlalchemy.orm import column_property, foreign, relationship
@@ -164,8 +164,8 @@ class KycSubmission(Base):
     full_name = Column(String, nullable=False)
     citizenship_number = Column(String, nullable=False, index=True)
     gender = Column(String, nullable=False)
-    date_of_birth = Column(DateTime(timezone=True), nullable=False)
-    issued_date = Column(DateTime(timezone=True), nullable=False)
+    date_of_birth = Column(Date, nullable=False)
+    issued_date = Column(Date, nullable=False)
     ward_number = Column(String, nullable=False)
     tole = Column(String, nullable=True)
     province_name = Column(String, nullable=False)
