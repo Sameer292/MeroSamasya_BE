@@ -1,5 +1,13 @@
 # Mero Samasya backend
 
+## Issue references
+
+Display the full issue UUID from the API's `id` field as the issue reference.
+Use the same value in issue URLs and when sharing or looking up an issue.
+The web detail view already displays `issue.id`, and the numeric
+`issueNumber` field is used only in mock data. The API uses a single identifier,
+so existing issues need no backfill.
+
 ## Admin authentication
 
 The web admin portal uses `/api/auth/admin/login`, `/api/auth/admin/me`,
@@ -39,28 +47,28 @@ configured portal origin. It revokes the presented portal session cookie and
 clears it from the browser. Portal sessions have no server-side timeout.
 Bearer-token clients use the JWT logout endpoint below.
 
-## Admin issue moderation
+## Admin issue reads
 
-`POST /api/admin/issues/{issue_id}/moderation` accepts a JSON body with
-`category_id`, `status`, or both. It requires an active admin or superadmin.
-Cookie-authenticated writes also require the configured admin portal origin.
-Category changes require an existing active category.
+`GET /api/admin/issues` and `GET /api/admin/issues/{issue_id}` require an
+active admin or superadmin. Both endpoints exclude soft-deleted issues. The
+detail endpoint returns 404 for a missing or soft-deleted issue. Each issue
+includes a `reporter` with only `id` and `name`, or `null` when no reporter
+is associated with it.
 
-| Current status | Allowed next statuses |
+The list accepts these query parameters.
+
+| Parameter | Behavior |
 | --- | --- |
-| `open` | `in_progress`, `resolved`, `closed` |
-| `in_progress` | `open`, `resolved`, `closed` |
-| `resolved` | `in_progress`, `closed` |
-| `closed` | `open` |
+| `search` | Case-insensitive substring match across title, description, and address. Blank values are ignored. |
+| `status` | Exact match on `open`, `in_progress`, `resolved`, or `closed`. |
+| `category_id` | Exact match on the category ID. |
+| `sort` | `newest` (default) or `oldest`, ordered by creation time with issue ID breaking ties. |
+| `page` | One-based page number. Defaults to 1. |
+| `limit` | Page size from 1 to 100. Defaults to 10. |
 
-Moving to `resolved` sets `resolved_at`. Closing a resolved issue keeps that
-timestamp. Reopening clears it. An invalid transition returns 409. Sending
-the current values succeeds with `data.event` set to null.
-
-`GET /api/admin/issues/{issue_id}/moderation` returns audit entries newest
-first, including the reviewer ID, timestamp, and previous and current values
-for each changed field. History remains readable after a soft delete.
-Issue changes and their audit entry are saved in one transaction.
+Search and filters combine. The response contains `data.issues` and
+`data.meta` with `total`, `page`, `limit`, and `total_pages`. Totals reflect
+the matching issues even when the requested page is empty.
 
 ## JWT refresh and logout
 

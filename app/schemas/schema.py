@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr, field_validator, Field, model_validato
 from typing import Annotated, Optional
 from datetime import datetime
 from .enum import AccountStatusEnum, IssueStatusEnum, UserRole
-import re
+from .password_policy import validate_password_strength
 
 FullName = Annotated[
     str,
@@ -34,13 +34,7 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, v):
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        if not re.search(r"[a-zA-Z]", v):
-            raise ValueError("Password must contain at least one letter")
-        if not re.search(r"[0-9]", v):
-            raise ValueError("Password must contain at least one number")
-        return v
+        return validate_password_strength(v)
 
     @model_validator(mode="after")
     def passwords_match(self):
@@ -160,7 +154,7 @@ class IssueMediaResponse(BaseModel):
 
 
 class IssueData(BaseModel):
-    id: str
+    id: str = Field(description="Stable issue UUID used in URLs and as the displayed reference.")
     citizen_id: Optional[str] = None
     category: Optional[CategoryResponse] = None
     title: str

@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 from app.api import (
     admin_auth_routes,
     admin_issue_moderation_routes,
+    admin_issue_routes,
+    admin_subscriber_routes,
     all_nepal_location_routes,
     auth_routes,
     issue_routes,
@@ -48,6 +50,10 @@ def root():
 
 
 app.include_router(admin_auth_routes.router, prefix="/api/auth/admin", tags=["Admin Authentication"])
+app.include_router(admin_issue_routes.router, prefix="/api/admin/issues", tags=["Admin Issues"])
+app.include_router(
+    admin_subscriber_routes.router, prefix="/api/admin/subscribers", tags=["Admin Subscribers"]
+)
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(
     admin_issue_moderation_routes.router, prefix="/api/admin/issues", tags=["Admin Issues"]

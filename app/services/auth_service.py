@@ -67,7 +67,9 @@ async def register_user(user: UserCreate, db: AsyncSession):
 
 async def authenticate_user(user: UserLogin, db: AsyncSession):
     try:
-        result = await db.execute(select(User).where(User.email == user.email))
+        result = await db.execute(
+            select(User).where(User.email == user.email).with_for_update()
+        )
         db_user = result.scalar_one_or_none()
     except Exception:
         raise HTTPException(
