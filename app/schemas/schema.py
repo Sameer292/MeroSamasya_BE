@@ -1,4 +1,12 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 from typing import Annotated, Optional
 from datetime import datetime
 from .enum import AccountStatusEnum, IssueStatusEnum, UserRole
@@ -148,9 +156,14 @@ class CategoryListResponse(BaseModel):
     data: list[CategoryData]
 
 
+IssueTitle = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=3, max_length=200)
+]
+
+
 class IssueCreate(BaseModel):
     category_id: str = Field(min_length=1)
-    title: str = Field(min_length=3, max_length=200)
+    title: IssueTitle
     description: Optional[str] = Field(None, min_length=5)
     latitude: float
     longitude: float
@@ -160,7 +173,7 @@ class IssueCreate(BaseModel):
 
 class IssueUpdate(BaseModel):
     category_id: Optional[str] = None
-    title: Optional[str] = Field(None, min_length=3, max_length=200)
+    title: IssueTitle | None = None
     description: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
