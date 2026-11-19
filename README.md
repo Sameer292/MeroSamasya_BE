@@ -112,8 +112,9 @@ See `.env.example` for the full list. Notes:
 - `JWT_SECRET` — required, HMAC key (32+ chars). The app refuses to boot
   without it.
 - `CLOUDINARY_*` — optional. When set, issue photos and avatars upload to
-  Cloudinary. When unset, files are stored under `LOCAL_STORAGE_DIR`
-  (default `./storage`, gitignored) and served by the API.
+  Cloudinary as authenticated assets. When unset, they use `LOCAL_STORAGE_DIR`
+  (default `./storage`, gitignored). The API serves both, revokes retired URLs,
+  and retries storage deletions from the database while the app is running.
 - KYC identity documents are **always** stored locally and served only
   through the authorized `GET /api/kyc/documents/{doc}` endpoint, never
   through public URLs.

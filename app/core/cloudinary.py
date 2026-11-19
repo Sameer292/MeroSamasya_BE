@@ -1,9 +1,11 @@
+import asyncio
+import os
+from urllib.request import urlopen
+
 import cloudinary
 import cloudinary.uploader
-import os
+from cloudinary.utils import cloudinary_url
 from dotenv import load_dotenv
-import asyncio
-from fastapi import HTTPException, status
 
 load_dotenv(".env")
 
@@ -13,36 +15,58 @@ cloudinary.config(
     api_secret=os.getenv("CLOUDINARY_API_SECRET"),
 )
 
+AUTHENTICATED = "authenticated"
+TIMEOUT = 8
 
-def is_configured() -> bool:
-    return bool(
-        os.getenv("CLOUDINARY_CLOUD_NAME")
-        and os.getenv("CLOUDINARY_API_KEY")
-        and os.getenv("CLOUDINARY_API_SECRET")
+
+def configured_cloud() -> str | None:
+    config = cloudinary.config()
+    if config.api_key and config.api_secret:
+        return config.cloud_name
+    return None
+
+
+async def upload_photo(file_bytes: bytes, public_id: str) -> str:
+    result = await asyncio.to_thread(
+        cloudinary.uploader.upload,
+        file_bytes,
+        public_id=public_id,
+        resource_type="image",
+        type=AUTHENTICATED,
+        overwrite=False,
+        allowed_formats=["jpg", "jpeg", "png", "webp"],
+        timeout=TIMEOUT,
     )
+    return result["format"]
 
 
-async def _upload(file_bytes: bytes, folder: str) -> str:
-    if not is_configured():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Image upload is not configured on this server.",
-        )
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None,
-        lambda: cloudinary.uploader.upload(
-            file_bytes,
-            folder=folder,
-            resource_type="image",
-        ),
+async def destroy_photo(public_id: str, cloud: str, delivery_type: str):
+    if cloud != configured_cloud():
+        raise RuntimeError("The upload's Cloudinary environment is unavailable.")
+    result = await asyncio.to_thread(
+        cloudinary.uploader.destroy,
+        public_id,
+        type=delivery_type,
+        resource_type="image",
+        invalidate=True,
+        timeout=TIMEOUT,
     )
-    return result["secure_url"]
+    if result.get("result") not in {"ok", "not found"}:
+        raise RuntimeError("Cloudinary did not confirm deletion.")
 
 
-async def upload_image(file_bytes: bytes, citizen_id: str, issue_id: str) -> str:
-    return await _upload(file_bytes, f"merosamasya/{citizen_id}/{issue_id}")
-
-
-async def upload_profile_picture(file_bytes: bytes, user_id: str) -> str:
-    return await _upload(file_bytes, f"merosamasya/{user_id}/profile_picture")
+def read_photo(public_id: str, cloud: str, image_format: str) -> tuple[bytes, str]:
+    url, _ = cloudinary_url(
+        public_id,
+        cloud_name=cloud,
+        format=image_format,
+        secure=True,
+        resource_type="image",
+        type=AUTHENTICATED,
+        sign_url=True,
+    )
+    with urlopen(url, timeout=TIMEOUT) as response:
+        content_type = response.headers.get_content_type()
+        if content_type not in {"image/jpeg", "image/png", "image/webp"}:
+            raise ValueError("Unexpected Cloudinary photo content type.")
+        return response.read(), content_type

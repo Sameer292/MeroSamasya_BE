@@ -1,32 +1,19 @@
-from sqlalchemy import select
+from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status, UploadFile
+
 from app.models.models import User
 from app.schemas.schema import UpdateProfileRequest
-from app.services.location_service import (
-    get_level_or_404,
-    serialize_user,
-)
-from app.core.cloudinary import (
-    upload_profile_picture,
-    is_configured as cloudinary_configured,
-)
-from app.core.storage import save_local
 from app.services.issue_service import (
     ALLOWED_TYPES,
     MAX_FILE_BYTES,
     check_file_bytes,
 )
-
-
-async def store_avatar(
-    file_bytes: bytes, content_type: str | None, user_id: str
-) -> str:
-    # ponytail: Cloudinary when configured, local disk fallback otherwise
-    if cloudinary_configured():
-        return await upload_profile_picture(file_bytes, user_id)
-    name = save_local(file_bytes, "profiles", content_type)
-    return f"/api/files/profiles/{name}"
+from app.services.location_service import (
+    get_level_or_404,
+    serialize_user,
+)
+from app.services.photo_storage import change_photos
 
 
 async def update_profile(
@@ -43,7 +30,7 @@ async def update_profile(
     else:
         location_id = None
 
-    avatar_url = None
+    file_bytes = None
     if profile_picture is not None:
         if profile_picture.content_type not in ALLOWED_TYPES:
             raise HTTPException(
@@ -53,7 +40,6 @@ async def update_profile(
         # ponytail: bounded read, a huge upload never fully lands in memory
         file_bytes = await profile_picture.read(MAX_FILE_BYTES + 1)
         check_file_bytes(file_bytes)
-        avatar_url = await store_avatar(file_bytes, profile_picture.content_type, user_id)
 
     values = {}
     if data.name is not None:
@@ -62,18 +48,32 @@ async def update_profile(
         values["phone"] = data.phone
     if location_id is not None:
         values["location_id"] = location_id
-    if avatar_url is not None:
-        values["profile_picture_url"] = avatar_url
-
     try:
-        if values:
-            await db.execute(
-                User.__table__.update().where(User.id == user_id).values(**values)
-            )
-            await db.commit()
+        async with change_photos(db) as photos:
+            previous_avatar = None
+            if profile_picture is not None and file_bytes is not None:
+                values["profile_picture_url"] = await photos.upload(
+                    file_bytes, "profiles", profile_picture.content_type
+                )
+                if db.get_bind().dialect.name == "sqlite":
+                    await db.execute(update(User.__table__).where(User.id == user_id)
+                                     .values(updated_at=User.updated_at))
+                previous_avatar = await db.scalar(
+                    select(User.profile_picture_url).where(User.id == user_id).with_for_update()
+                )
+            if values:
+                result = await db.execute(
+                    update(User.__table__).where(User.id == user_id).values(**values)
+                )
+                if not result.rowcount:
+                    raise HTTPException(status_code=404, detail="User not found.")
+            if previous_avatar:
+                await photos.retire(previous_avatar)
         db.expire_all()
         result = await db.execute(select(User).where(User.id == user_id))
         updated_user = result.scalar_one()
+    except HTTPException:
+        raise
     except Exception:
         await db.rollback()
         raise HTTPException(
