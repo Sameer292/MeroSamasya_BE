@@ -155,7 +155,7 @@ class IssueCreate(BaseModel):
     latitude: float
     longitude: float
     address: Optional[str] = Field(None, min_length=1)
-    local_level_id: Optional[str] = None
+    local_level_id: str
 
 
 class IssueUpdate(BaseModel):

@@ -18,19 +18,22 @@ from app.api import (
 )
 from app.core.admin_config import ADMIN_WEB_ORIGIN
 from app.core.database import engine, Base, AsyncSessionLocal
-from app.core.migrations import run_startup_migrations
+from app.core.migrations import backfill_report_areas, run_startup_migrations
 from app.services.category_service import ensure_default_categories
 from app.services.nepal_location_service import ensure_bundled_locations
+from app.services.report_area_service import boundaries
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    boundaries()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await run_startup_migrations(engine)
     async with AsyncSessionLocal() as session:
         await ensure_default_categories(session)
         await ensure_bundled_locations(session)
+        await backfill_report_areas(session)
     yield
 
 

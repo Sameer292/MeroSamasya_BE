@@ -42,14 +42,21 @@ or app-relative (`/api/files/issues/<name>` — prepend the base URL).
 
 | Method | Path | Body | Response `data` |
 |---|---|---|---|
-| POST | `/api/issues/create` | multipart: `category_id, title (3-200), description?, latitude, longitude, address?, local_level_id?` + 1–3 `images` (jpeg/png/webp, ≤5 MB each) | `IssueData` (201). Area = explicit `local_level_id` or reporter's area snapshot |
+| POST | `/api/issues/create` | multipart: `category_id, title (3-200), description?, latitude, longitude, address?, local_level_id` + 1–3 `images` (jpeg/png/webp, ≤5 MB each) | `IssueData` (201) |
 | GET | `/api/issues/all?page&limit` | — | `{meta: {total, page, limit, total_pages}, issues}` (page≥1, limit 1–100) |
 | GET | `/api/issues/me?...` | — | same shape, own non-deleted issues |
 | GET | `/api/issues/nearme?...` | — | same shape, issues whose area = caller's area (400 if caller has none) |
 | GET | `/api/issues/{id}` | — | `IssueData` |
-| PATCH | `/api/issues/{id}` | multipart: any of `category_id?, title?, description?, latitude?, longitude?, address?, local_level_id?`, `retained_media_ids?`, new `images?` | `IssueData`. Only `open` issues, owner only |
+| PATCH | `/api/issues/{id}` | multipart: `category_id?, title?, description?, address?, retained_media_ids?`, new `images?`, and the optional pin triplet (`latitude`, `longitude`, `local_level_id`) | `IssueData`. Only `open` issues, owner only |
 | DELETE | `/api/issues/{id}?delete_reason=` | — | `{id}`. Only `open` issues, owner only |
 | POST | `/api/issues/{id}/upvote` | — | `{upvoted: bool, upvote_count: int}` (toggle; owner gets a notification except on self-votes) |
+
+Create requests require a confirmed municipality ID. Pin edits send both
+coordinates and the municipality ID together. The API checks that the pin is
+inside or on the boundary of the selected municipality and saves the three
+values together. Changing the reporter's residence has no effect on a report's
+municipality. Existing reports keep their saved pins and municipality IDs.
+Legacy pins with no area ID are assigned only when they match one municipality.
 
 Photo edit rule: `retained_media_ids` is a **JSON string array** of existing
 media ids to keep, e.g. `retained_media_ids: "[\"id1\",\"id2\"]"`. Omitted =
@@ -62,6 +69,7 @@ legacy behavior (new files replace all; no files touches nothing). Explicit
 | Method | Path | Auth | Body | Response `data` |
 |---|---|---|---|---|
 | GET | `/api/location/locations?district_id=` | no | — | `[{id: string, name}]` from live local-level data (721+ rows); `id` is `String(local_levels.id)` |
+| GET | `/api/location/report-areas?latitude=&longitude=` | no | — | `[{id: string, name}]` for municipalities covering the pin. An empty list means the pin has no supported municipality. |
 | PATCH | `/api/location/location` | Bearer | `{location_id}` — must be an id from the list above | `UserData` |
 
 ## Nepal geo (`/api/nepal`, all GETs public)

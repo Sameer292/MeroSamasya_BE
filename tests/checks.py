@@ -37,13 +37,16 @@ async def main():
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
     from app.core.database import Base, get_db
+    from app.core.migrations import backfill_report_areas, run_startup_migrations
     from app.models import models  # noqa: F401
     from app.models import nepal_location_models  # noqa: F401
     from app.models.admin_auth import AdminMembership
-    from app.models.models import User
+    from app.models.models import Issue, User
     from app.models.nepal_location_models import Province, District, LocalLevel
     from app.schemas.enum import LocalLevelType, AccountStatusEnum
     from app.services.category_service import ensure_default_categories
+    from app.services.nepal_location_service import load_bundled_seed
+    from app.services.report_area_service import boundaries
     import main as app_module
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{DB_PATH}")
@@ -51,17 +54,37 @@ async def main():
         await conn.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+    _, area_names, _ = boundaries()
+    check("boundary catalog covers every seeded local level", len(area_names) == 753 and {
+        names[0] for names in area_names
+    } == {
+        (district, name)
+        for districts in load_bundled_seed().values()
+        for district, types in districts.items()
+        for names in types.values()
+        for name in names
+    })
+
     async with Session() as s:
         await ensure_default_categories(s)
-        prov = Province(name="Bagmati")
+        prov = Province(name="बागमती प्रदेश")
         s.add(prov)
         await s.flush()
-        dist = District(name="Lalitpur", province_id=prov.id)
-        s.add(dist)
+        dist = District(name="ललितपुर", province_id=prov.id)
+        report_dist = District(name="काठमाण्डौं", province_id=prov.id)
+        other_dist = District(name="भक्तपुर", province_id=prov.id)
+        old_report_dist = District(name="Kathmandu", province_id=prov.id)
+        s.add_all([dist, report_dist, other_dist, old_report_dist])
         await s.flush()
-        s.add(LocalLevel(name="Lalitpur Metro", type=LocalLevelType.MA_NA_PA, district_id=dist.id))
+        home = LocalLevel(name="ललितपुर महानगरपालिका", type=LocalLevelType.MA_NA_PA, district_id=dist.id)
+        report = LocalLevel(name="काठमाण्डौं महानगरपालिका", type=LocalLevelType.MA_NA_PA, district_id=report_dist.id)
+        other = LocalLevel(name="भक्तपुर नगरपालिका", type=LocalLevelType.NA_PA, district_id=other_dist.id)
+        old_report = LocalLevel(name="Kathmandu", type=LocalLevelType.MA_NA_PA, district_id=old_report_dist.id)
+        s.add_all([home, report, other, old_report])
         await s.commit()
-        level_id = (await s.execute(select(LocalLevel.id))).scalar_one()
+        level_id, report_level_id, other_level_id, old_report_level_id = (
+            str(level.id) for level in (home, report, other, old_report)
+        )
 
     async def override_db():
         async with Session() as session:
@@ -149,7 +172,7 @@ async def main():
             x["id"] == str(level_id) for x in r.json()["data"]))
         r = await c.patch("/api/location/location", json={"location_id": str(level_id)}, headers=H)
         check("set location 200 with name", r.status_code == 200
-              and r.json()["data"]["location"] == {"id": str(level_id), "name": "Lalitpur Metro"})
+              and r.json()["data"]["location"] == {"id": str(level_id), "name": "ललितपुर महानगरपालिका"})
         r = await c.patch("/api/location/location", json={"location_id": "999999"}, headers=H)
         check("bad location 404", r.status_code == 404)
 
@@ -157,28 +180,31 @@ async def main():
         r = await c.get("/api/issues/all?page=0", headers=H)
         check("page=0 -> 422", r.status_code == 422)
         files = [("images", IMG)]
-        r = await c.post("/api/issues/create", headers=H, data={
+        report_data = {
             "category_id": cat_id, "title": "Pothole on Main Road",
-            "latitude": "27.7", "longitude": "85.3"}, files=files)
+            "latitude": "27.710", "longitude": "85.324",
+            "local_level_id": report_level_id,
+        }
+        pin = {key: report_data[key] for key in ("latitude", "longitude")}
+        r = await c.get("/api/location/report-areas", params=pin)
+        check("pin lookup returns the current municipality ID", r.status_code == 200
+              and r.json()["data"] == [{"id": report_level_id, "name": "काठमाण्डौं महानगरपालिका"}])
+        r = await c.get("/api/location/report-areas", params={"latitude": "0", "longitude": "0"})
+        check("pin outside supported boundaries has no choices", r.status_code == 200 and r.json()["data"] == [])
+        r = await c.post("/api/issues/create", headers=H, data=report_data, files=files)
         check("create without desc/addr 201", r.status_code == 201)
         issue = r.json()["data"]
-        check("area snapshotted from user", issue["local_level_id"] == str(level_id))
+        check("explicit report area differs from residence", issue["local_level_id"] == str(report_level_id))
         check("local media url", issue["media"][0]["url"].startswith("/api/files/issues/"))
         r = await c.get(issue["media"][0]["url"])
         check("stored photo served 200", r.status_code == 200)
         iid = issue["id"]
         mid = issue["media"][0]["id"]
-        r = await c.post("/api/issues/create", headers=H, data={
-            "category_id": "nope", "title": "Bad cat issue",
-            "latitude": "1", "longitude": "1"}, files=files)
+        r = await c.post("/api/issues/create", headers=H, data={**report_data, "category_id": "nope"}, files=files)
         check("bad category 404", r.status_code == 404)
-        r = await c.post("/api/issues/create", headers=H, data={
-            "category_id": cat_id, "title": "No image issue",
-            "latitude": "1", "longitude": "1"})
+        r = await c.post("/api/issues/create", headers=H, data=report_data)
         check("no images 400", r.status_code == 400)
-        r = await c.post("/api/issues/create", headers=H, data={
-            "category_id": cat_id, "title": "Bad type issue",
-            "latitude": "1", "longitude": "1"},
+        r = await c.post("/api/issues/create", headers=H, data=report_data,
             files=[("images", ("t.txt", b"hi", "text/plain"))])
         check("bad file type 400", r.status_code == 400)
 
@@ -186,7 +212,7 @@ async def main():
             r = await c.get(path, headers=H, params={"page": 1, "limit": 10} if "{" not in path else None)
             check(f"read {path} 200", r.status_code == 200)
         r = await c.get("/api/issues/nearme", headers=H)
-        check("nearme finds own-area issue", r.json()["data"]["meta"]["total"] == 1)
+        check("residence feed excludes report across municipal boundary", r.json()["data"]["meta"]["total"] == 0)
 
         # --- second user + votes ---
         r = await c.post("/api/auth/register", json={
@@ -194,6 +220,36 @@ async def main():
             "password": "pass1234", "confirm_password": "pass1234"})
         r = await c.post("/api/auth/login", json={"email": "voter2@example.com", "password": "pass1234"})
         H2 = {"Authorization": f"Bearer {r.json()['data']['access_token']}"}
+        r = await c.patch("/api/location/location", json={"location_id": old_report_level_id}, headers=H2)
+        check("reader can select report municipality", r.status_code == 200)
+        r = await c.get("/api/issues/nearme", headers=H2)
+        check("report appears in its municipality with a legacy profile ID", [x["id"] for x in r.json()["data"]["issues"]] == [iid])
+        r = await c.post("/api/issues/create", headers=H, data={**report_data, "local_level_id": level_id}, files=files)
+        check("create rejects a pin outside its selected municipality", r.status_code == 400)
+        r = await c.post("/api/issues/create", headers=H, data={**report_data, "latitude": "nan"}, files=files)
+        check("create rejects non-finite coordinates", r.status_code == 400)
+        r = await c.post("/api/issues/create", headers=H,
+                         data={key: value for key, value in report_data.items() if key != "local_level_id"}, files=files)
+        check("create requires municipality even when residence is saved", r.status_code == 422)
+        r = await c.patch("/api/location/location", json={"location_id": other_level_id}, headers=H)
+        check("reporter changes residence to a third municipality", r.status_code == 200)
+        r = await c.get("/api/issues/nearme", headers=H2)
+        check("report stays in original municipal feed after reporter moves", [x["id"] for x in r.json()["data"]["issues"]] == [iid])
+
+        r = await c.patch(f"/api/issues/{iid}", headers=H, data={"latitude": "27.673"})
+        check("edit requires municipality and both coordinates together", r.status_code == 400)
+        moved_pin = {"latitude": "27.673", "longitude": "85.324", "local_level_id": level_id}
+        r = await c.patch(f"/api/issues/{iid}", headers=H, data={**moved_pin, "local_level_id": report_level_id})
+        check("edit rejects a pin outside its selected municipality", r.status_code == 400)
+        moved = await c.patch(f"/api/issues/{iid}", headers=H, data=moved_pin)
+        check("pin edit saves coordinates and municipality together", moved.status_code == 200
+              and moved.json()["data"]["local_level_id"] == level_id
+              and moved.json()["data"]["latitude"] == 27.673)
+        r = await c.get("/api/issues/nearme", headers=H2)
+        check("moved report leaves the previous municipal feed", r.json()["data"]["issues"] == [])
+        r = await c.patch("/api/location/location", json={"location_id": level_id}, headers=H2)
+        r = await c.get("/api/issues/nearme", headers=H2)
+        check("moved report appears in its new municipal feed", [x["id"] for x in r.json()["data"]["issues"]] == [iid])
         r = await c.post(f"/api/issues/{iid}/upvote", headers=H2)
         body = r.json()
         check("upvote 200 count 1", r.status_code == 200 and body["data"]["upvote_count"] == 1
@@ -222,6 +278,8 @@ async def main():
         r = await c.patch(f"/api/issues/{iid}", headers=H, data={"title": "Updated title here"},
                           files=[("images", IMG2)])
         check("edit replace-all legacy 200", r.status_code == 200 and len(r.json()["data"]["media"]) == 1)
+        check("metadata edit preserves the saved pin", (r.json()["data"]["latitude"], r.json()["data"]["local_level_id"])
+              == (27.673, level_id))
         kept = r.json()["data"]["media"][0]["id"]
         r = await c.patch(f"/api/issues/{iid}", headers=H,
                           data={"retained_media_ids": jsonlib.dumps([kept])},
@@ -278,11 +336,11 @@ async def main():
         # --- kyc (area chain validated against live Nepal data) ---
         import json as jsonlib2  # noqa: F401
         provs = (await c.get("/api/nepal/provinces")).json()
-        prov = next(p for p in provs if p["name"] == "Bagmati")
+        prov = next(p for p in provs if p["name"] == "बागमती प्रदेश")
         dists = (await c.get(f"/api/nepal/provinces/{prov['id']}/districts")).json()
-        dist = next(d for d in dists if d["name"] == "Lalitpur")
+        dist = next(d for d in dists if d["name"] == "ललितपुर")
         lvls = (await c.get(f"/api/nepal/districts/{dist['id']}/local")).json()
-        lvl = next(l for l in lvls if l["id"] == level_id)
+        lvl = next(l for l in lvls if str(l["id"]) == level_id)
         area = jsonlib.dumps({"id": lvl["id"], "name": lvl["name"]})
         prov_j = jsonlib.dumps({"id": prov["id"], "name": prov["name"]})
         dist_j = jsonlib.dumps({"id": dist["id"], "name": dist["name"]})
@@ -323,7 +381,7 @@ async def main():
               and r.json()["data"]["issues"][0]["reporter"]["id"] == owner_id)
         r = await c.get(f"/api/admin/subscribers/{owner_id}", headers=AH)
         check("main subscriber detail resolves a live local level", r.status_code == 200
-              and r.json()["data"]["location"] == {"id": str(level_id), "name": "Lalitpur Metro"})
+              and r.json()["data"]["location"] == {"id": level_id, "name": home.name})
         r = await c.post(f"/api/admin/issues/{iid}/moderation", headers=AH, json={"category_id": new_cat})
         check("main moderation can assign an active category", r.status_code == 200)
         r = await c.delete(f"/api/category/{new_cat}", headers=AH)
@@ -379,9 +437,7 @@ async def main():
         # --- delete closes flow ---
         r = await c.delete(f"/api/issues/{iid}", headers=H, params={"delete_reason": "fixed"})
         check("delete non-open issue 400", r.status_code == 400)
-        r = await c.post("/api/issues/create", headers=H, data={
-            "category_id": cat_id, "title": "Disposable open issue",
-            "latitude": "1", "longitude": "1"}, files=files)
+        r = await c.post("/api/issues/create", headers=H, data={**report_data, "title": "Disposable open issue"}, files=files)
         iid2 = r.json()["data"]["id"]
         r = await c.delete(f"/api/issues/{iid2}", headers=H, params={"delete_reason": "fixed"})
         check("owner delete 200", r.status_code == 200)
@@ -397,6 +453,28 @@ async def main():
               and r.json()["data"]["user_id"] == owner_id)
         r = await c.post("/api/auth/login", json={"email": "TEST@example.com", "password": "newpass123"})
         check("ambiguous legacy email case returns 401", r.status_code == 401)
+
+    await run_startup_migrations(engine)
+    async with Session() as s:
+        legacy = Issue(citizen_id=owner_id, category_id=cat_id, title="Legacy pin",
+                       latitude=27.710, longitude=85.324, address="Saved address")
+        unmatched = Issue(citizen_id=owner_id, category_id=cat_id, title="Legacy outside pin",
+                          latitude=0, longitude=0)
+        s.add_all([legacy, unmatched])
+        await s.commit()
+        await s.refresh(legacy)
+        updated_at = legacy.updated_at
+        await backfill_report_areas(s)
+        await backfill_report_areas(s)
+        for row in (legacy, unmatched):
+            await s.refresh(row)
+        check("migration uses legacy pin and preserves its coordinates, address and timestamp",
+              (legacy.local_level_id, legacy.latitude, legacy.longitude, legacy.address, legacy.updated_at)
+              == (report_level_id, 27.710, 85.324, "Saved address", updated_at))
+        check("unmapped legacy pin stays unassigned", unmatched.local_level_id is None)
+        issue = await s.get(Issue, iid)
+        check("migration keeps report municipality and pin after residence change",
+              (issue.local_level_id, issue.latitude, issue.longitude) == (level_id, 27.673, 85.324))
 
     await engine.dispose()
     print(f"\nALL {len(PASS)} CHECKS PASSED")
