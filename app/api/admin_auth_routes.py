@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
 
-from app.core.admin_config import ADMIN_COOKIE_NAME, ADMIN_COOKIE_SECURE
+from app.core.admin_config import ADMIN_COOKIE_NAME, ADMIN_COOKIE_SECURE, NO_STORE
 from app.dependencies.admin_deps import (
     AdminSessionCookie,
     Database,
@@ -20,7 +20,6 @@ from app.services.password_change import change_password
 
 router = APIRouter()
 COOKIE_OPTIONS = {"secure": ADMIN_COOKIE_SECURE, "httponly": True, "samesite": "lax"}
-NO_STORE = {"Cache-Control": "private, no-store"}
 
 
 @router.post("/login", status_code=204, dependencies=[Depends(verify_admin_origin)])

@@ -39,25 +39,28 @@ configured portal origin. It revokes the presented portal session cookie and
 clears it from the browser. Portal sessions have no server-side timeout.
 Bearer-token clients use the JWT logout endpoint below.
 
-## Change your password
+## Admin issue reads
 
-Use `POST /api/auth/change-password` with an access token or
-`POST /api/auth/admin/change-password` from the configured admin portal origin.
-The admin endpoint accepts an admin session cookie or an admin access token.
-Both endpoints change the authenticated account's password and accept this JSON
-body.
+`GET /api/admin/issues` and `GET /api/admin/issues/{issue_id}` require an
+active admin or superadmin. Both endpoints exclude soft-deleted issues. The
+detail endpoint returns 404 for a missing or soft-deleted issue. Each issue
+includes a `reporter` with only `id` and `name`, or `null` when no reporter
+is associated with it.
 
-```json
-{
-  "current_password": "OldPassword1",
-  "new_password": "NewPassword2",
-  "confirm_new_password": "NewPassword2"
-}
-```
+The list accepts these query parameters.
 
-A successful change returns 204 and revokes the account's refresh tokens and
-admin sessions. The admin endpoint also clears the session cookie. Existing
-access tokens remain valid until expiry, subject to the account-status check.
+| Parameter | Behavior |
+| --- | --- |
+| `search` | Case-insensitive substring match across title, description, and address. Blank values are ignored. |
+| `status` | Exact match on `open`, `in_progress`, `resolved`, or `closed`. |
+| `category_id` | Exact match on the category ID. |
+| `sort` | `newest` (default) or `oldest`, ordered by creation time with issue ID breaking ties. |
+| `page` | One-based page number. Defaults to 1. |
+| `limit` | Page size from 1 to 100. Defaults to 10. |
+
+Search and filters combine. The response contains `data.issues` and
+`data.meta` with `total`, `page`, `limit`, and `total_pages`. Totals reflect
+the matching issues even when the requested page is empty.
 
 ## JWT refresh and logout
 
