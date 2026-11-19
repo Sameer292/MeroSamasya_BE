@@ -1,18 +1,19 @@
+import math
 from datetime import datetime, timezone
-from sqlalchemy import select, func
+
+from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.models import Issue, IssueMedia, Category, Upvote
-from app.services.report_area_service import report_feed_area_ids, validate_report_area
-from app.services.notification_service import notify
-from app.schemas.schema import IssueCreate, IssueUpdate
-from fastapi import HTTPException, status, UploadFile
-from app.core.cloudinary import upload_image, is_configured as cloudinary_configured
-from app.core.storage import save_local
+
+from app.models.models import Category, Issue, IssueMedia, Upvote
 from app.schemas.enum import IssueStatusEnum
-import math
+from app.schemas.schema import IssueCreate, IssueUpdate
+from app.services.notification_service import notify
+from app.services.photo_storage import PhotoChanges, change_photos
+from app.services.report_area_service import report_feed_area_ids, validate_report_area
 
 MAX_IMAGES = 3
 MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -45,14 +46,13 @@ def check_file_bytes(file_bytes: bytes):
         )
 
 
-async def store_issue_photo(
-    file_bytes: bytes, content_type: str | None, citizen_id: str, issue_id: str
-) -> str:
-    # ponytail: Cloudinary when configured, local disk fallback otherwise
-    if cloudinary_configured():
-        return await upload_image(file_bytes, citizen_id, issue_id)
-    name = save_local(file_bytes, "issues", content_type)
-    return f"/api/files/issues/{name}"
+async def upload_issue_photos(photos: PhotoChanges, images: list[UploadFile]) -> list[str]:
+    urls = []
+    for image in images:
+        file_bytes = await image.read(MAX_FILE_BYTES + 1)
+        check_file_bytes(file_bytes)
+        urls.append(await photos.upload(file_bytes, "issues", image.content_type))
+    return urls
 
 
 def attach_votes(issues: list, current_user_id: str | None):
@@ -90,33 +90,23 @@ async def create_issue(
     validate_image_files(images)
 
     try:
-        local_level_id = await validate_report_area(
-            db, data.local_level_id, data.latitude, data.longitude
-        )
-        issue = Issue(
-            citizen_id=citizen_id,
-            category_id=data.category_id,
-            title=data.title,
-            description=data.description,
-            latitude=data.latitude,
-            longitude=data.longitude,
-            address=data.address,
-            local_level_id=local_level_id,
-        )
-        db.add(issue)
-        await db.flush()
-
-        for image in images:
-            # ponytail: bounded read, a huge upload never fully lands in memory
-            file_bytes = await image.read(MAX_FILE_BYTES + 1)
-            check_file_bytes(file_bytes)
-            url = await store_issue_photo(
-                file_bytes, image.content_type, citizen_id, issue.id
+        async with change_photos(db) as photos:
+            local_level_id = await validate_report_area(
+                db, data.local_level_id, data.latitude, data.longitude
             )
-            media = IssueMedia(issue_id=issue.id, url=url)
-            db.add(media)
-
-        await db.commit()
+            urls = await upload_issue_photos(photos, images)
+            issue = Issue(
+                citizen_id=citizen_id,
+                category_id=data.category_id,
+                title=data.title,
+                description=data.description,
+                latitude=data.latitude,
+                longitude=data.longitude,
+                address=data.address,
+                local_level_id=local_level_id,
+                media=[IssueMedia(url=url) for url in urls],
+            )
+            db.add(issue)
 
         result = await db.execute(
             select(Issue)
@@ -207,7 +197,11 @@ async def get_issue_by_id(
             )
         )
         if for_update:
-            statement = statement.with_for_update()
+            if db.get_bind().dialect.name == "sqlite":
+                # SQLite ignores SELECT FOR UPDATE. Take its write lock before reading media.
+                await db.execute(update(Issue.__table__).where(Issue.id == issue_id)
+                                 .values(updated_at=Issue.updated_at))
+            statement = statement.with_for_update().execution_options(populate_existing=True)
         issue = await db.scalar(statement)
     except Exception:
         raise HTTPException(
@@ -248,9 +242,13 @@ async def delete_issue(
         )
 
     try:
-        issue.deleted_at = datetime.now(timezone.utc)
-        issue.delete_reason = delete_reason
-        await db.commit()
+        async with change_photos(db) as photos:
+            issue.deleted_at = datetime.now(timezone.utc)
+            issue.delete_reason = delete_reason
+            urls = {media.url for media in issue.media}
+            issue.media.clear()
+            for url in urls:
+                await photos.retire(url)
     except Exception:
         await db.rollback()
         raise HTTPException(
@@ -261,15 +259,8 @@ async def delete_issue(
     return {"message": "Issue deleted successfully.", "data": {"id": issue_id}}
 
 
-async def update_issue(
-    issue_id: str,
-    citizen_id: str,
-    data: IssueUpdate,
-    db: AsyncSession,
-    images: list[UploadFile] = [],
-    retained_media_ids: list[str] | None = None,
-):
-    issue_response = await get_issue_by_id(issue_id, db, citizen_id, for_update=True)
+async def get_editable_issue(issue_id: str, citizen_id: str, db: AsyncSession, *, lock: bool):
+    issue_response = await get_issue_by_id(issue_id, db, citizen_id, for_update=lock)
     issue = issue_response["data"]
 
     if issue.citizen_id != citizen_id:
@@ -283,73 +274,68 @@ async def update_issue(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only open issues can be edited.",
         )
+    return issue
+
+
+async def update_issue(
+    issue_id: str,
+    citizen_id: str,
+    data: IssueUpdate,
+    db: AsyncSession,
+    images: list[UploadFile] = [],
+    retained_media_ids: list[str] | None = None,
+):
+    if images:
+        await get_editable_issue(issue_id, citizen_id, db, lock=False)
 
     validate_image_files(images)
 
-    if data.category_id is not None and data.category_id != issue.category_id:
-        category = await db.execute(
-            select(Category).where(Category.id == data.category_id, Category.deleted_at.is_(None))
-        )
-        if not category.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Category not found.",
-            )
-
     try:
-        pin_fields = ("latitude", "longitude", "local_level_id")
-        if any(getattr(data, field) is not None for field in pin_fields):
-            issue.local_level_id = await validate_report_area(
-                db, data.local_level_id, data.latitude, data.longitude
-            )
-            issue.latitude = data.latitude
-            issue.longitude = data.longitude
-            # Write all three values even if another edit changed one since we loaded the issue.
-            for field in pin_fields:
-                flag_modified(issue, field)
-        if data.category_id is not None:
-            issue.category_id = data.category_id
-        if data.title is not None:
-            issue.title = data.title
-        if data.description is not None:
-            issue.description = data.description
-        if data.address is not None:
-            issue.address = data.address
+        async with change_photos(db) as photos:
+            urls = await upload_issue_photos(photos, images)
+            issue = await get_editable_issue(issue_id, citizen_id, db, lock=True)
+            if data.category_id is not None and data.category_id != issue.category_id:
+                category = await db.scalar(
+                    select(Category).where(Category.id == data.category_id, Category.deleted_at.is_(None))
+                )
+                if category is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND, detail="Category not found."
+                    )
 
-        # ponytail: omitted list = legacy (replace-all iff new files arrive);
-        # explicit list (even []) = retain exactly those, remove the rest.
-        media_touched = bool(images) or retained_media_ids is not None
-        retained_ids: set[str] = set()
-        if media_touched:
-            if retained_media_ids:
-                valid_ids = {m.id for m in issue.media}
-                if not set(retained_media_ids) <= valid_ids:
+            pin_fields = ("latitude", "longitude", "local_level_id")
+            if any(getattr(data, field) is not None for field in pin_fields):
+                issue.local_level_id = await validate_report_area(
+                    db, data.local_level_id, data.latitude, data.longitude
+                )
+                issue.latitude = data.latitude
+                issue.longitude = data.longitude
+                # Write all three values even if another edit changed one since we loaded the issue.
+                for field in pin_fields:
+                    flag_modified(issue, field)
+            for field in ("category_id", "title", "description", "address"):
+                if (value := getattr(data, field)) is not None:
+                    setattr(issue, field, value)
+
+            # Omitted retained IDs preserve the gallery unless new files replace it.
+            if urls or retained_media_ids is not None:
+                retained_ids = set(retained_media_ids or [])
+                if not retained_ids <= {media.id for media in issue.media}:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Invalid media id in retained_media_ids.",
                     )
-                retained_ids = set(retained_media_ids)
-            total_media = len(retained_ids) + len(images)
-            if not 1 <= total_media <= MAX_IMAGES:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Issue must end with 1 to {MAX_IMAGES} photos.",
-                )
+                if not 1 <= len(retained_ids) + len(urls) <= MAX_IMAGES:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Issue must end with 1 to {MAX_IMAGES} photos.",
+                    )
+                removed = {media.url for media in issue.media if media.id not in retained_ids}
+                issue.media = [media for media in issue.media if media.id in retained_ids]
+                issue.media.extend(IssueMedia(url=url) for url in urls)
+                for url in removed - {media.url for media in issue.media}:
+                    await photos.retire(url)
 
-        if media_touched:
-            for media in issue.media:
-                if media.id not in retained_ids:
-                    await db.delete(media)
-            for image in images:
-                # ponytail: bounded read, a huge upload never fully lands in memory
-                file_bytes = await image.read(MAX_FILE_BYTES + 1)
-                check_file_bytes(file_bytes)
-                url = await store_issue_photo(
-                    file_bytes, image.content_type, citizen_id, issue_id
-                )
-                db.add(IssueMedia(issue_id=issue_id, url=url))
-
-        await db.commit()
         db.expire_all()
 
         result = await db.execute(

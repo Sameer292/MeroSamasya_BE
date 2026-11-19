@@ -37,8 +37,8 @@ account. Register and login normalize email to lowercase.
 `IssueData = {id, citizen_id, category, title, description?, status
 (open|in_progress|resolved|closed), latitude, longitude, address?,
 media: [{id, url, created_at}], upvote_count, has_upvoted, local_level_id?,
-created_at, updated_at, resolved_at?}`. Media `url` is absolute (Cloudinary)
-or app-relative (`/api/files/issues/<name>` — prepend the base URL).
+created_at, updated_at, resolved_at?}`. New photo URLs are app-relative
+(`/api/files/issues/<name>`). Older Cloudinary URLs can be absolute.
 
 | Method | Path | Body | Response `data` |
 |---|---|---|---|
@@ -103,7 +103,9 @@ status changes, KYC decisions.
 
 ## Files (`/api/files`, public)
 
-`GET /api/files/{issues|profiles}/{name}` serves locally stored uploads.
+`GET /api/files/{issues|profiles}/{name}` serves active public photos from
+local storage or Cloudinary with `Cache-Control: no-store`. Retired URLs
+return 404. Older direct Cloudinary URLs are revoked through CDN invalidation.
 `kyc` is never servable here.
 
 ## Admin (`/api/admin`, admin or superadmin required)

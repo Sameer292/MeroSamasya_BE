@@ -1,26 +1,30 @@
+import asyncio
+from contextlib import asynccontextmanager, suppress
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
+
 from app.api import (
     admin_auth_routes,
     admin_issue_moderation_routes,
     admin_issue_routes,
+    admin_routes,
     admin_subscriber_routes,
     all_nepal_location_routes,
     auth_routes,
     category_routes,
     files_routes,
     issue_routes,
+    kyc_routes,
     location_routes,
     notification_routes,
-    kyc_routes,
-    admin_routes,
 )
 from app.core.admin_config import ADMIN_WEB_ORIGIN
-from app.core.database import engine, Base, AsyncSessionLocal
+from app.core.database import AsyncSessionLocal, Base, engine
 from app.core.migrations import backfill_report_areas, run_startup_migrations
 from app.services.category_service import ensure_default_categories
 from app.services.nepal_location_service import ensure_bundled_locations
+from app.services.photo_storage import retire_deleted_report_photos, retry_photo_cleanup
 from app.services.report_area_service import boundaries
 
 
@@ -34,7 +38,14 @@ async def lifespan(app: FastAPI):
         await ensure_default_categories(session)
         await ensure_bundled_locations(session)
         await backfill_report_areas(session)
-    yield
+        await retire_deleted_report_photos(session)
+    cleanup_worker = asyncio.create_task(retry_photo_cleanup())
+    try:
+        yield
+    finally:
+        cleanup_worker.cancel()
+        with suppress(asyncio.CancelledError):
+            await cleanup_worker
 
 
 app = FastAPI(

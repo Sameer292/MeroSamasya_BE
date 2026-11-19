@@ -9,11 +9,14 @@ import asyncio
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 TMP = tempfile.mkdtemp(prefix="merosamasya-checks-")
 os.environ["LOCAL_STORAGE_DIR"] = os.path.join(TMP, "storage")
 os.environ["ADMIN_WEB_ORIGIN"] = "https://admin.test"
 os.environ["ADMIN_COOKIE_SECURE"] = "true"
+for key in ("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"):
+    os.environ[key] = ""
 os.environ.setdefault("JWT_SECRET", "merosamasya-local-contract-test-not-a-secret")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -197,9 +200,10 @@ async def main():
         check("explicit report area differs from residence", issue["local_level_id"] == str(report_level_id))
         check("local media url", issue["media"][0]["url"].startswith("/api/files/issues/"))
         r = await c.get(issue["media"][0]["url"])
-        check("stored photo served 200", r.status_code == 200)
+        check("stored photo served 200 without caching", r.status_code == 200
+              and r.headers["Cache-Control"] == "no-store")
         iid = issue["id"]
-        mid = issue["media"][0]["id"]
+        issue_photo = issue["media"][0]["url"]
         r = await c.post("/api/issues/create", headers=H, data={**report_data, "category_id": "nope"}, files=files)
         check("bad category 404", r.status_code == 404)
         r = await c.post("/api/issues/create", headers=H, data=report_data)
@@ -207,6 +211,12 @@ async def main():
         r = await c.post("/api/issues/create", headers=H, data=report_data,
             files=[("images", ("t.txt", b"hi", "text/plain"))])
         check("bad file type 400", r.status_code == 400)
+        storage = Path(os.environ["LOCAL_STORAGE_DIR"]) / "issues"
+        before_upload = set(storage.iterdir())
+        r = await c.post("/api/issues/create", headers=H, data=report_data,
+                         files=[("images", IMG), ("images", ("empty.jpg", b"", "image/jpeg"))])
+        check("failed multipart upload leaves no unreferenced file",
+              r.status_code == 400 and set(storage.iterdir()) == before_upload)
 
         for path in (f"/api/issues/{iid}", "/api/issues/me", "/api/issues/all", "/api/issues/nearme"):
             r = await c.get(path, headers=H, params={"page": 1, "limit": 10} if "{" not in path else None)
@@ -278,6 +288,7 @@ async def main():
         r = await c.patch(f"/api/issues/{iid}", headers=H, data={"title": "Updated title here"},
                           files=[("images", IMG2)])
         check("edit replace-all legacy 200", r.status_code == 200 and len(r.json()["data"]["media"]) == 1)
+        check("replaced issue photo URL returns 404", (await c.get(issue_photo)).status_code == 404)
         check("metadata edit preserves the saved pin", (r.json()["data"]["latitude"], r.json()["data"]["local_level_id"])
               == (27.673, level_id))
         kept = r.json()["data"]["media"][0]["id"]
@@ -285,10 +296,13 @@ async def main():
                           data={"retained_media_ids": jsonlib.dumps([kept])},
                           files=[("images", IMG), ("images", IMG2)])
         check("retain 1 + add 2 = 3", r.status_code == 200 and len(r.json()["data"]["media"]) == 3)
+        gallery = {media["id"]: media["url"] for media in r.json()["data"]["media"]}
+        before_upload = set(storage.iterdir())
         r = await c.patch(f"/api/issues/{iid}", headers=H,
                           data={"retained_media_ids": jsonlib.dumps(["no-such-id"])},
                           files=[("images", IMG)])
-        check("foreign keep id 400", r.status_code == 400)
+        check("failed edit leaves the existing gallery intact and no additional file",
+              r.status_code == 400 and set(storage.iterdir()) == before_upload)
         r = await c.patch(f"/api/issues/{iid}", headers=H,
                           data={"retained_media_ids": jsonlib.dumps([kept])},
                           files=[("images", IMG), ("images", IMG2), ("images", IMG)])
@@ -300,6 +314,14 @@ async def main():
         r = await c.patch(f"/api/issues/{iid}", headers=H,
                           data={"retained_media_ids": jsonlib.dumps([])})
         check("explicit empty retain 400", r.status_code == 400)
+        r = await c.patch(f"/api/issues/{iid}", headers=H,
+                          data={"retained_media_ids": jsonlib.dumps([kept])})
+        check("remove-only edit preserves the retained photo", r.status_code == 200
+              and (await c.get(gallery[kept])).status_code == 200)
+        for media_id, url in gallery.items():
+            if media_id != kept:
+                check("removed photo URL returns 404 and file is gone",
+                      (await c.get(url)).status_code == 404 and not (storage / Path(url).name).exists())
         # explicit [] + new files = replace with new
         r = await c.patch(f"/api/issues/{iid}", headers=H,
                           data={"retained_media_ids": jsonlib.dumps([])},
@@ -317,6 +339,20 @@ async def main():
             files=[("profile_picture", IMG)])
         check("profile update 200", r.status_code == 200
               and r.json()["data"]["name"] == "Test Renamed")
+        avatar = r.json()["data"]["profile_picture_url"]
+        r = await c.patch("/api/auth/me", headers=H, files=[("profile_picture", IMG2)])
+        check("replaced avatar URL returns 404", r.status_code == 200
+              and (await c.get(avatar)).status_code == 404
+              and (await c.get(r.json()["data"]["profile_picture_url"])).status_code == 200)
+        replacements = await asyncio.gather(*(
+            c.patch("/api/auth/me", headers=H, files=[("profile_picture", image)])
+            for image in (IMG, IMG2)
+        ))
+        current_avatar = (await c.get("/api/auth/me", headers=H)).json()["data"]["profile_picture_url"]
+        profiles = storage.parent / "profiles"
+        check("concurrent avatar replacements leave only the current file",
+              all(result.status_code == 200 for result in replacements)
+              and {path.name for path in profiles.iterdir()} == {Path(current_avatar).name})
         r = await c.patch("/api/auth/me", headers=H, data={"location_id": "999999"})
         check("profile bad location 404", r.status_code == 404)
         r = await c.post("/api/auth/change-password", headers=H, json={
@@ -439,10 +475,13 @@ async def main():
         check("delete non-open issue 400", r.status_code == 400)
         r = await c.post("/api/issues/create", headers=H, data={**report_data, "title": "Disposable open issue"}, files=files)
         iid2 = r.json()["data"]["id"]
+        deleted_photo = r.json()["data"]["media"][0]["url"]
         r = await c.delete(f"/api/issues/{iid2}", headers=H, params={"delete_reason": "fixed"})
         check("owner delete 200", r.status_code == 200)
         r = await c.get(f"/api/issues/{iid2}", headers=H)
         check("deleted detail 404", r.status_code == 404)
+        check("deleted report photo 404", (await c.get(deleted_photo)).status_code == 404)
+        check("deleted report photo removed from disk", not (storage / Path(deleted_photo).name).exists())
 
         async with Session() as s:
             user = await s.get(User, owner_id)
@@ -453,6 +492,8 @@ async def main():
               and r.json()["data"]["user_id"] == owner_id)
         r = await c.post("/api/auth/login", json={"email": "TEST@example.com", "password": "newpass123"})
         check("ambiguous legacy email case returns 401", r.status_code == 401)
+
+        await check_hosted_photos(c, H, report_data, IMG, Session)
 
     await run_startup_migrations(engine)
     async with Session() as s:
@@ -478,6 +519,125 @@ async def main():
 
     await engine.dispose()
     print(f"\nALL {len(PASS)} CHECKS PASSED")
+
+
+async def check_hosted_photos(client, headers, report_data, image, session_factory):
+    from contextlib import suppress
+    from datetime import timedelta
+    from email.message import Message
+    from io import BytesIO
+    from unittest.mock import patch
+    from urllib.parse import urlsplit
+
+    from app.core import cloudinary, storage
+    from app.models.models import Issue, IssueMedia, utcnow
+    from app.models.photo_storage import PhotoObject
+    from app.services import photo_storage
+
+    assets = {}
+    blocked = set()
+    destroyed = []
+    failures = []
+
+    def upload(payload, public_id, *, resource_type, type, overwrite, **_):
+        assert resource_type == "image" and type == "authenticated" and overwrite is False
+        assets[public_id] = payload
+        if payload == b"upload timed out after the remote write":
+            raise TimeoutError("Simulated lost upload response")
+        return {"format": "jpg"}
+
+    def destroy(key, *, type, resource_type, invalidate, **_):
+        assert type in {"authenticated", "upload"} and resource_type == "image" and invalidate
+        if key in blocked:
+            failures.append(key)
+            raise OSError("Simulated Cloudinary outage")
+        destroyed.append((key, type))
+        if key not in assets:
+            return {"result": "not found"}
+        del assets[key]
+        return {"result": "ok"}
+
+    def read(url, **_):
+        parts = urlsplit(url).path.split("/")
+        assert parts[1:4] == ["contract-test", "image", "authenticated"]
+        assert parts[4].startswith("s--")
+        key = "/".join(parts[-3:]).removesuffix(".jpg")
+        response = BytesIO(assets[key])
+        response.headers = Message()
+        response.headers["Content-Type"] = "image/jpeg"
+        return response
+
+    async def wait_until(condition):
+        async def poll():
+            while not condition():
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(poll(), 2)
+
+    config = cloudinary.cloudinary.config()
+    with (
+        patch.object(config, "cloud_name", "contract-test"),
+        patch.object(config, "api_key", "fake"),
+        patch.object(config, "api_secret", "fake"),
+        patch.object(cloudinary.cloudinary.uploader, "upload", upload),
+        patch.object(cloudinary.cloudinary.uploader, "destroy", destroy),
+        patch.object(cloudinary, "urlopen", read),
+        patch.object(photo_storage, "RETRY_DELAY", timedelta(milliseconds=30)),
+    ):
+        r = await client.post("/api/issues/create", headers=headers, data=report_data,
+                              files=[("images", image), ("images", (
+                                  "bad.jpg", b"upload timed out after the remote write", "image/jpeg"
+                              ))])
+        check("partially uploaded hosted report leaves no remote objects", r.status_code == 500 and not assets)
+        r = await client.post("/api/issues/create", headers=headers, data=report_data, files=[("images", image)])
+        issue = r.json()["data"]
+        photo_url = issue["media"][0]["url"]
+        r = await client.get(photo_url)
+        check("hosted photo is served through the API without caching", r.status_code == 200
+              and r.headers["Cache-Control"] == "no-store" and r.content == image[1])
+
+        key = next(iter(assets))
+        blocked.add(key)
+        r = await client.delete(f"/api/issues/{issue['id']}", headers=headers)
+        check("hosted URL is revoked while physical cleanup is unavailable", r.status_code == 200
+              and key in assets and (await client.get(photo_url)).status_code == 404)
+        worker = asyncio.create_task(photo_storage.retry_photo_cleanup())
+        try:
+            await wait_until(lambda: key in failures)
+            async with session_factory() as db:
+                photo = await db.get(PhotoObject, photo_url)
+                check("failed hosted deletion is durable", photo is not None and photo.delete_after is not None)
+            blocked.clear()
+            await wait_until(lambda: key not in assets)
+            check("cleanup worker retries an unavailable hosted deletion", key not in assets)
+
+            r = await client.patch("/api/auth/me", headers=headers, files=[("profile_picture", image)])
+            previous_avatar = r.json()["data"]["profile_picture_url"]
+            r = await client.patch("/api/auth/me", headers=headers, files=[("profile_picture", image)])
+            check("replacing a hosted avatar revokes the previous URL",
+                  r.status_code == 200 and (await client.get(previous_avatar)).status_code == 404)
+            await wait_until(lambda: len(assets) == 1)
+            check("the cleanup worker deletes the replaced hosted avatar", len(assets) == 1)
+        finally:
+            worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker
+
+        legacy_name = storage.save_local(image[1], "issues", image[2])
+        legacy_key = "merosamasya/owner/report/legacy"
+        assets[legacy_key] = image[1]
+        legacy_local = f"/api/files/issues/{legacy_name}"
+        legacy_hosted = f"https://res.cloudinary.com/contract-test/image/upload/v1/{legacy_key}.jpg"
+        async with session_factory.begin() as db:
+            db.add(Issue(title="Previously deleted report", latitude=0, longitude=0, deleted_at=utcnow(),
+                         media=[IssueMedia(url=legacy_local), IssueMedia(url=legacy_hosted)]))
+        check("legacy deleted local photo is unavailable before cleanup", (await client.get(legacy_local)).status_code == 404)
+        async with session_factory() as db:
+            await photo_storage.retire_deleted_report_photos(db)
+        for url in (legacy_local, legacy_hosted):
+            await photo_storage.clean_photo(url)
+        check("existing deleted reports queue legacy local and hosted photos for cleanup",
+              not storage.stored_path("issues", legacy_name).exists() and (legacy_key, "upload") in destroyed)
 
 
 asyncio.run(main())
