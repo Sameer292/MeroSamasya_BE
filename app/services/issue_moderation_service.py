@@ -13,6 +13,7 @@ from app.schemas.issue_moderation import (
     ModerationEvent,
 )
 from app.services.issue_transitions import resolution_timestamp
+from app.services.notification_service import notify
 
 
 async def lock_issue(db: AsyncSession, issue_id: str) -> Issue:
@@ -66,6 +67,18 @@ async def moderate_issue(
             issue_id=issue_id, reviewer_id=reviewer_id, created_at=now, changes=changes
         )
         db.add(event)
+        if request.status is not None and issue.citizen_id and any(
+            change["field"] == "status" for change in changes
+        ):
+            status_label = request.status.value.replace("_", " ").title()
+            notify(
+                db,
+                issue.citizen_id,
+                "status",
+                "Status update",
+                f"Your report '{issue.title}' is now {status_label}.",
+                issue_id=issue_id,
+            )
         await db.flush()
     result = IssueModerationResult(
         issue=ModeratedIssue.model_validate(issue),

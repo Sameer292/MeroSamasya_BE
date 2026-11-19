@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator, Field, model_validator
 from typing import Annotated, Optional
 from datetime import datetime
 from .enum import AccountStatusEnum, IssueStatusEnum, UserRole
@@ -49,11 +49,10 @@ class UserLogin(BaseModel):
 
 
 class LocationSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True, coerce_numbers_to_str=True)
+
     id: str
     name: str
-
-    class Config:
-        from_attributes = True
 
 
 class LocationResponse(BaseModel):
@@ -111,7 +110,25 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
-class CategoryResponse(BaseModel):
+class UpdateProfileRequest(BaseModel):
+    name: Optional[FullName] = None
+    phone: Optional[PhoneNumber] = None
+    location_id: Optional[str] = None
+
+
+class CategoryCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    icon: str = Field(min_length=1)
+    color: str = Field(min_length=4, max_length=7)
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    icon: Optional[str] = None
+    color: Optional[str] = Field(None, min_length=4, max_length=7)
+
+
+class CategoryData(BaseModel):
     id: str
     name: str
     icon: str
@@ -121,18 +138,24 @@ class CategoryResponse(BaseModel):
         from_attributes = True
 
 
+class CategoryResponse(BaseModel):
+    message: str
+    data: CategoryData
+
+
 class CategoryListResponse(BaseModel):
     message: str
-    data: list[CategoryResponse]
+    data: list[CategoryData]
 
 
 class IssueCreate(BaseModel):
     category_id: str = Field(min_length=1)
     title: str = Field(min_length=3, max_length=200)
-    description: str = Field(min_length=5)
+    description: Optional[str] = Field(None, min_length=5)
     latitude: float
     longitude: float
-    address: str = Field(min_length=1)
+    address: Optional[str] = Field(None, min_length=1)
+    local_level_id: Optional[str] = None
 
 
 class IssueUpdate(BaseModel):
@@ -142,6 +165,7 @@ class IssueUpdate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     address: Optional[str] = None
+    local_level_id: Optional[str] = None
 
 
 class IssueMediaResponse(BaseModel):
@@ -156,7 +180,7 @@ class IssueMediaResponse(BaseModel):
 class IssueData(BaseModel):
     id: str = Field(description="Stable issue UUID used in URLs and as the displayed reference.")
     citizen_id: Optional[str] = None
-    category: Optional[CategoryResponse] = None
+    category: Optional[CategoryData] = None
     title: str
     description: Optional[str] = None
     status: IssueStatusEnum
@@ -164,6 +188,9 @@ class IssueData(BaseModel):
     longitude: float
     address: Optional[str] = None
     media: list[IssueMediaResponse] = []
+    upvote_count: int = 0
+    has_upvoted: bool = False
+    local_level_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     resolved_at: Optional[datetime] = None
@@ -211,3 +238,110 @@ class PaginatedIssueData(BaseModel):
 class PaginatedIssueResponse(BaseModel):
     message: str
     data: PaginatedIssueData
+
+
+class UpvoteData(BaseModel):
+    upvoted: bool
+    upvote_count: int
+
+
+class UpvoteResponse(BaseModel):
+    message: str
+    data: UpvoteData
+
+
+class NotificationData(BaseModel):
+    id: str
+    type: str
+    title: str
+    message: str
+    read: bool
+    issue_id: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class NotificationListData(BaseModel):
+    meta: PaginationMeta
+    unread_count: int
+    notifications: list[NotificationData]
+
+
+class NotificationListResponse(BaseModel):
+    message: str
+    data: NotificationListData
+
+
+class NotificationResponse(BaseModel):
+    message: str
+    data: NotificationData
+
+
+class KycDocumentLinks(BaseModel):
+    selfie: str
+    front: str
+    back: str
+
+
+class KycData(BaseModel):
+    id: str
+    full_name: str
+    citizenship_number: str
+    gender: str
+    date_of_birth: datetime
+    issued_date: datetime
+    ward_number: str
+    tole: Optional[str] = None
+    province_name: str
+    district_name: str
+    municipality_name: str
+    local_level_id: Optional[str] = None
+    status: str
+    reviewer_note: Optional[str] = None
+    documents: KycDocumentLinks
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class KycResponse(BaseModel):
+    message: str
+    data: KycData
+
+
+class KycListData(BaseModel):
+    meta: PaginationMeta
+    submissions: list[KycData]
+
+
+class KycListResponse(BaseModel):
+    message: str
+    data: KycListData
+
+
+class KycReviewRequest(BaseModel):
+    status: str = Field(pattern=r"^(approved|rejected)$")
+    note: Optional[str] = None
+
+
+class StatusUpdateRequest(BaseModel):
+    status: IssueStatusEnum
+
+
+class AdminOverviewData(BaseModel):
+    open: int
+    in_progress: int
+    resolved: int
+    closed: int
+    total_issues: int
+    total_users: int
+    kyc_pending: int
+
+
+class AdminOverviewResponse(BaseModel):
+    message: str
+    data: AdminOverviewData

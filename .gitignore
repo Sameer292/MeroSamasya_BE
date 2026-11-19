@@ -14,3 +14,6 @@ wheels/
 
 #Database
 merosamasya.db
+
+# Local file storage (profile/issue photos, private KYC identity documents)
+storage/

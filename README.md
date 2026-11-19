@@ -1,4 +1,7 @@
 # Mero Samasya backend
+FastAPI backend for the MeroSamasya citizen grievance app: auth, categories,
+issues with photos, upvotes, profile, KYC, notifications, Nepal location data,
+file serving, and admin reporting/status endpoints.
 
 ## Issue references
 
@@ -84,3 +87,54 @@ remain usable until expiry, subject to the account-status check.
 The app creates the `RefreshTokens` table on startup. Refresh tokens issued
 before this change require a fresh login. Logout and refresh share the same
 stored token record, so a token can only be consumed once.
+
+## Local run (SQLite, no extra services)
+
+Use a command-line database override to run against local SQLite.
+
+```bash
+DATABASE_URL="sqlite+aiosqlite:///./local.db" \
+JWT_SECRET="dev-secret-at-least-32-chars-long-please" \
+.venv/bin/python -m uvicorn main:app --reload --port 8000
+```
+
+First boot creates the schema, runs idempotent migrations, seeds the 9 bundled
+categories when empty, and reconciles the bundled Nepal location data
+(7 provinces, 77 districts, 753 local levels). To force a clean geo reseed,
+delete the SQLite file and reboot.
+
+## Environment
+
+See `.env.example` for the full list. Notes:
+
+- `DATABASE_URL` — `sqlite+aiosqlite:///./file.db` locally,
+  `postgresql+asyncpg://...` for shared deployments.
+- `JWT_SECRET` — required, HMAC key (32+ chars). The app refuses to boot
+  without it.
+- `CLOUDINARY_*` — optional. When set, issue photos and avatars upload to
+  Cloudinary. When unset, files are stored under `LOCAL_STORAGE_DIR`
+  (default `./storage`, gitignored) and served by the API.
+- KYC identity documents are **always** stored locally and served only
+  through the authorized `GET /api/kyc/documents/{doc}` endpoint, never
+  through public URLs.
+
+## Checks
+
+```bash
+.venv/bin/python tests/checks.py
+```
+
+Runs the whole citizen flow (auth, categories, issues, votes, media retain,
+profile, password, KYC, notifications, admin) against a temp SQLite DB with
+local storage. No network, no Cloudinary.
+
+## Data sources
+
+- Nepal province/district/local-level data (`app/data/nepal_locations.json`,
+  7 provinces, 77 districts, 753 local levels, official Nepali names):
+  https://mofaga.gov.np/local-contact?visible=753
+
+## Mobile contract
+
+See `API_CONTRACT.md` for the exact endpoint/field contract the mobile app
+is built against.

@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.schema import LocationResponse, UpdateLocationRequest, UserResponse
+from app.schemas.schema import (
+    LocationResponse,
+    UpdateLocationRequest,
+    UserResponse,
+)
 from app.services.location_service import get_locations, update_user_location
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
@@ -11,8 +15,11 @@ router = APIRouter()
 @router.get(
     "/locations", response_model=LocationResponse, status_code=status.HTTP_200_OK
 )
-async def locations(db: AsyncSession = Depends(get_db)):
-    return await get_locations(db)
+async def locations(
+    district_id: int | None = Query(None, ge=1),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_locations(db, district_id)
 
 
 @router.patch("/location", response_model=UserResponse, status_code=status.HTTP_200_OK)
