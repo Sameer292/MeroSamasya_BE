@@ -45,7 +45,7 @@ async def delete_refresh_token(db: AsyncSession, token: str, user_id: str) -> bo
 
 async def refresh_access_token(token: str, db: AsyncSession):
     user_id = get_token_subject(token, refresh=True)
-    require_active_account(await db.get(User, user_id))
+    require_active_account(await db.get(User, user_id, with_for_update=True))
     if not await delete_refresh_token(db, token, user_id):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token revoked")
     return {
