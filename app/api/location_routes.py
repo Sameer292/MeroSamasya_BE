@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.dependencies.auth_deps import get_current_user
 from app.schemas.schema import (
+    Latitude,
     LocationResponse,
+    Longitude,
     UpdateLocationRequest,
     UserResponse,
 )
@@ -28,8 +30,8 @@ async def locations(
 
 @router.get("/report-areas", response_model=LocationResponse)
 async def report_areas(
-    latitude: float,
-    longitude: float,
+    latitude: Latitude,
+    longitude: Longitude,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     return {

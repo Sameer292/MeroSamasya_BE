@@ -1,8 +1,10 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api import (
     admin_auth_routes,
@@ -59,6 +61,20 @@ app = FastAPI(
         "url": "https://github.com/sameer292/merosamasya_be",
     },
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(_: Request, error: RequestValidationError):
+    # Input and context can include credentials or values JSON cannot encode.
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": [
+                {key: issue[key] for key in ("loc", "msg", "type")}
+                for issue in error.errors()
+            ]
+        },
+    )
 
 
 app.add_middleware(

@@ -3,10 +3,8 @@ from fastapi import (
     Depends,
     HTTPException,
     Query,
-    Request,
     status,
     UploadFile,
-    File,
     Form,
 )
 from fastapi.exceptions import RequestValidationError
@@ -16,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.schema import (
     IssueResponse,
     IssueCreate,
-    IssueTitle,
     DeleteResponse,
     IssueUpdate,
     PaginatedIssueResponse,
@@ -40,32 +37,25 @@ from app.dependencies.auth_deps import get_current_user
 router = APIRouter()
 
 
+class IssueCreateForm(IssueCreate):
+    images: list[UploadFile] = []
+
+
+class IssueUpdateForm(IssueUpdate):
+    retained_media_ids: str | None = None
+    images: list[UploadFile] = []
+
+
 @router.post(
     "/create", response_model=IssueResponse, status_code=status.HTTP_201_CREATED
 )
 async def open_issue(
-    title: Annotated[IssueTitle, Form()],
-    category_id: str = Form(...),
-    description: Optional[str] = Form(None),
-    latitude: float = Form(...),
-    longitude: float = Form(...),
-    address: Optional[str] = Form(None),
-    local_level_id: str = Form(...),
-    images: list[UploadFile] = File(default=[]),
+    data: Annotated[IssueCreateForm, Form(media_type="multipart/form-data")],
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
 
-    data = IssueCreate(
-        category_id=category_id,
-        title=title,
-        description=description,
-        latitude=latitude,
-        longitude=longitude,
-        address=address,
-        local_level_id=local_level_id,
-    )
-    return await create_issue(data, current_user.id, db, images)
+    return await create_issue(data, current_user.id, db, data.images)
 
 
 @router.get(
@@ -142,37 +132,24 @@ async def remove_issue(
 )
 async def edit_issue(
     issue_id: str,
-    request: Request,
-    category_id: Optional[str] = Form(None),
-    title: Annotated[IssueTitle | None, Form()] = None,
-    description: Optional[str] = Form(None),
-    latitude: Optional[float] = Form(None),
-    longitude: Optional[float] = Form(None),
-    address: Optional[str] = Form(None),
-    local_level_id: Optional[str] = Form(None),
-    retained_media_ids: Optional[str] = Form(None),
-    images: list[UploadFile] = File(default=[]),
+    data: Annotated[IssueUpdateForm, Form(media_type="multipart/form-data")],
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # FastAPI treats an empty form string as missing, but only omission should skip an edit.
-    if title is None and "title" in await request.form():
-        raise RequestValidationError([
-            {"type": "value_error", "loc": ("body", "title"), "msg": "Title cannot be empty"}
-        ])
-    data = IssueUpdate(
-        category_id=category_id,
-        title=title,
-        description=description,
-        latitude=latitude,
-        longitude=longitude,
-        address=address,
-        local_level_id=local_level_id,
-    )
+    pin_fields = ("latitude", "longitude", "local_level_id")
+    if data.model_fields_set.intersection(pin_fields):
+        missing = [
+            {"type": "missing", "loc": ("body", field), "msg": "Required when changing the report pin"}
+            for field in pin_fields
+            if getattr(data, field) is None
+        ]
+        if missing:
+            raise RequestValidationError(missing)
+
     retained: list[str] | None = None
-    if retained_media_ids is not None:
+    if data.retained_media_ids:
         try:
-            parsed = json.loads(retained_media_ids)
+            parsed = json.loads(data.retained_media_ids)
         except (json.JSONDecodeError, TypeError):
             parsed = None
         if not isinstance(parsed, list) or not all(
@@ -184,7 +161,7 @@ async def edit_issue(
             )
         retained = parsed
     return await update_issue(
-        issue_id, current_user.id, data, db, images, retained
+        issue_id, current_user.id, data, db, data.images, retained
     )
 
 

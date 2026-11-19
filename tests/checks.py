@@ -114,10 +114,17 @@ async def main():
 
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
         # --- auth ---
-        r = await c.post("/api/auth/register", json={
-            "name": "Test User", "phone": "9800000001", "email": "Test@Example.com",
-            "password": "pass1234", "confirm_password": "pass1234"})
-        check("register 201", r.status_code == 201)
+        signup = {
+            "name": "  राम शर्मा  ", "phone": "9800000001", "email": "Test@Example.com",
+            "password": "pass1234", "confirm_password": "pass1234"}
+        for field, value in (("name", "राम1"), ("confirm_password", "different1")):
+            r = await c.post("/api/auth/register", json={**signup, field: value})
+            errors = r.json()["detail"]
+            check(f"register returns a field error for {field}", r.status_code == 422
+                  and errors[0]["loc"] == ["body", field]
+                  and set(errors[0]) == {"loc", "msg", "type"})
+        r = await c.post("/api/auth/register", json=signup)
+        check("register accepts a Devanagari name", r.status_code == 201)
         r = await c.post("/api/auth/register", json={
             "name": "Test User", "phone": "9800000001", "email": "test@example.com",
             "password": "pass1234", "confirm_password": "pass1234"})
@@ -127,6 +134,8 @@ async def main():
         tokens = r.json()["data"]
         owner_id = tokens["user_id"]
         H = {"Authorization": f"Bearer {tokens['access_token']}"}
+        r = await c.get("/api/auth/me", headers=H)
+        check("register stores the trimmed name", r.json()["data"]["name"] == "राम शर्मा")
         r = await c.post("/api/auth/login", json={"email": "test@example.com", "password": "wrongpass1"})
         check("wrong password 401", r.status_code == 401)
         concurrent_refreshes = await asyncio.gather(*(
@@ -251,6 +260,9 @@ async def main():
               and r.json()["data"] == [{"id": report_level_id, "name": "काठमाण्डौं महानगरपालिका"}])
         r = await c.get("/api/location/report-areas", params={"latitude": "0", "longitude": "0"})
         check("pin outside supported boundaries has no choices", r.status_code == 200 and r.json()["data"] == [])
+        r = await c.get("/api/location/report-areas", params={**pin, "latitude": "120"})
+        check("area lookup rejects out-of-range latitude with a field error", r.status_code == 422
+              and r.json()["detail"][0]["loc"] == ["query", "latitude"])
         r = await c.post("/api/issues/create", headers=H, data=report_data, files=files)
         check("create without desc/addr 201", r.status_code == 201)
         issue = r.json()["data"]
@@ -262,6 +274,25 @@ async def main():
               and r.headers["Cache-Control"] == "no-store")
         iid = issue["id"]
         issue_photo = issue["media"][0]["url"]
+        r = await c.patch(f"/api/issues/{iid}", headers=H, data={"title": issue["title"]})
+        check("report with missing optional text can be edited", r.status_code == 200
+              and r.json()["data"]["description"] is None and r.json()["data"]["address"] is None)
+        for field, invalid in (("latitude", "120"), ("latitude", "nan"), ("longitude", "-181"),
+                               ("longitude", "inf"), ("description", "  abc  ")):
+            payload = {**report_data, field: invalid}
+            r = await c.post("/api/issues/create", headers=H, data=payload, files=files)
+            check(f"create rejects invalid {field} ({invalid}) with a field error",
+                  r.status_code == 422 and r.json()["detail"][0]["loc"] == ["body", field])
+            r = await c.patch(f"/api/issues/{iid}", headers=H, data={**pin, field: invalid})
+            check(f"edit rejects invalid {field} ({invalid}) with a field error",
+                  r.status_code == 422 and r.json()["detail"][0]["loc"] == ["body", field])
+        r = await c.patch(f"/api/issues/{iid}", headers=H,
+                          data={"description": "  Road damage  ", "address": "  काठमाडौं  "})
+        check("edit trims report text", r.status_code == 200
+              and r.json()["data"]["description"] == "Road damage" and r.json()["data"]["address"] == "काठमाडौं")
+        r = await c.patch(f"/api/issues/{iid}", headers=H, data={"description": "", "address": " "})
+        check("edit can clear optional report text", r.status_code == 200
+              and r.json()["data"]["description"] is None and r.json()["data"]["address"] is None)
         for invalid_title in ("", " \t ", "  ab  ", "x" * 201):
             r = await c.post("/api/issues/create", headers=H,
                              data={**report_data, "title": invalid_title}, files=files)
@@ -302,8 +333,6 @@ async def main():
         check("report appears in its municipality with a legacy profile ID", [x["id"] for x in r.json()["data"]["issues"]] == [iid])
         r = await c.post("/api/issues/create", headers=H, data={**report_data, "local_level_id": level_id}, files=files)
         check("create rejects a pin outside its selected municipality", r.status_code == 400)
-        r = await c.post("/api/issues/create", headers=H, data={**report_data, "latitude": "nan"}, files=files)
-        check("create rejects non-finite coordinates", r.status_code == 400)
         r = await c.post("/api/issues/create", headers=H,
                          data={key: value for key, value in report_data.items() if key != "local_level_id"}, files=files)
         check("create requires municipality even when residence is saved", r.status_code == 422)
@@ -313,7 +342,8 @@ async def main():
         check("report stays in original municipal feed after reporter moves", [x["id"] for x in r.json()["data"]["issues"]] == [iid])
 
         r = await c.patch(f"/api/issues/{iid}", headers=H, data={"latitude": "27.673"})
-        check("edit requires municipality and both coordinates together", r.status_code == 400)
+        check("edit requires municipality and both coordinates together", r.status_code == 422
+              and {error["loc"][-1] for error in r.json()["detail"]} == {"longitude", "local_level_id"})
         moved_pin = {"latitude": "27.673", "longitude": "85.324", "local_level_id": level_id}
         r = await c.patch(f"/api/issues/{iid}", headers=H, data={**moved_pin, "local_level_id": report_level_id})
         check("edit rejects a pin outside its selected municipality", r.status_code == 400)
@@ -404,11 +434,15 @@ async def main():
         check("delete non-owner 403", r.status_code == 403)
 
         # --- profile + password (mobile: PATCH /api/auth/me, POST change-password) ---
+        for name in ("", "  ", "राम1"):
+            r = await c.patch("/api/auth/me", headers=H, data={"name": name})
+            check("profile rejects invalid name with a field error", r.status_code == 422
+                  and r.json()["detail"][0]["loc"] == ["body", "name"])
         r = await c.patch("/api/auth/me", headers=H, data={
-            "name": "Test Renamed", "phone": "9800000009", "location_id": str(level_id)},
+            "name": "  सीता श्रेष्ठ  ", "phone": "9800000009", "location_id": str(level_id)},
             files=[("profile_picture", IMG)])
-        check("profile update 200", r.status_code == 200
-              and r.json()["data"]["name"] == "Test Renamed")
+        check("profile update accepts and trims a Devanagari name", r.status_code == 200
+              and r.json()["data"]["name"] == "सीता श्रेष्ठ")
         avatar = r.json()["data"]["profile_picture_url"]
         r = await c.patch("/api/auth/me", headers=H, files=[("profile_picture", IMG2)])
         check("replaced avatar URL returns 404", r.status_code == 200
