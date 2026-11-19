@@ -24,6 +24,10 @@ receive 401. Revoked sessions return 401 on bearer requests and refresh.
 Refresh tokens can be rotated once. Register and login normalize email to
 lowercase.
 
+Signup and profile updates trim names and require 2–50 characters using
+Unicode letters, combining marks, and spaces. Request validation returns
+HTTP 422 with `{"detail":[{"loc":["body","name"],"msg":"…","type":"…"}]}`.
+
 ## Categories
 
 | Method | Path | Auth | Notes |
@@ -58,6 +62,12 @@ inside or on the boundary of the selected municipality and saves the three
 values together. Changing the reporter's residence has no effect on a report's
 municipality. Existing reports keep their saved pins and municipality IDs.
 Legacy pins with no area ID are assigned only when they match one municipality.
+
+Latitude must be finite and within −90 to 90. Longitude must be finite and
+within −180 to 180. Create and edit trim titles, descriptions, and addresses.
+A nonblank description must contain at least 5 characters. Blank descriptions
+and addresses are stored as null. On edit, omitting those fields preserves their
+saved values.
 
 Photo edit rule: `retained_media_ids` is a **JSON string array** of existing
 media ids to keep, e.g. `retained_media_ids: "[\"id1\",\"id2\"]"`. Omitted =

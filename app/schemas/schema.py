@@ -4,8 +4,8 @@ from pydantic import (
     EmailStr,
     Field,
     StringConstraints,
+    ValidationInfo,
     field_validator,
-    model_validator,
 )
 from typing import Annotated, Optional
 from datetime import datetime
@@ -14,12 +14,13 @@ from .password_policy import validate_password_strength
 
 FullName = Annotated[
     str,
+    StringConstraints(strip_whitespace=True),
     Field(
         min_length=2,
         max_length=50,
-        pattern=r"^[a-zA-Z\s]+$",
-        description="Letters and spaces only",
-        examples=["Bishal Baniya"],
+        pattern=r"^\p{L}[\p{L}\p{M} ]*$",
+        description="Unicode letters, combining marks, and spaces",
+        examples=["Bishal Baniya", "राम शर्मा"],
     ),
 ]
 PhoneNumber = Annotated[
@@ -44,11 +45,12 @@ class UserCreate(BaseModel):
     def validate_password(cls, v):
         return validate_password_strength(v)
 
-    @model_validator(mode="after")
-    def passwords_match(self):
-        if self.password != self.confirm_password:
+    @field_validator("confirm_password")
+    @classmethod
+    def passwords_match(cls, value: str, info: ValidationInfo) -> str:
+        if "password" in info.data and info.data["password"] != value:
             raise ValueError("Passwords do not match")
-        return self
+        return value
 
 
 class UserLogin(BaseModel):
@@ -159,26 +161,35 @@ class CategoryListResponse(BaseModel):
 IssueTitle = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=3, max_length=200)
 ]
+Latitude = Annotated[float, Field(ge=-90, le=90, allow_inf_nan=False)]
+Longitude = Annotated[float, Field(ge=-180, le=180, allow_inf_nan=False)]
+RequiredId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
-class IssueCreate(BaseModel):
-    category_id: str = Field(min_length=1)
+class IssueText(BaseModel):
+    description: Annotated[str, Field(min_length=5)] | None = None
+    address: str | None = None
+
+    @field_validator("description", "address", mode="before")
+    @classmethod
+    def trim_optional_text(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
+
+
+class IssueCreate(IssueText):
+    category_id: RequiredId
     title: IssueTitle
-    description: Optional[str] = Field(None, min_length=5)
-    latitude: float
-    longitude: float
-    address: Optional[str] = Field(None, min_length=1)
-    local_level_id: str
+    latitude: Latitude
+    longitude: Longitude
+    local_level_id: RequiredId
 
 
-class IssueUpdate(BaseModel):
-    category_id: Optional[str] = None
+class IssueUpdate(IssueText):
+    category_id: RequiredId | None = None
     title: IssueTitle | None = None
-    description: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    address: Optional[str] = None
-    local_level_id: Optional[str] = None
+    latitude: Latitude | None = None
+    longitude: Longitude | None = None
+    local_level_id: RequiredId | None = None
 
 
 class IssueMediaResponse(BaseModel):

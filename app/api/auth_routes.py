@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, status, UploadFile, File, Form
-from typing import Optional
+from fastapi import APIRouter, Depends, status, UploadFile, Form
+from typing import Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import User
 from app.schemas.password_change import CitizenPasswordChangeRequest
@@ -24,6 +24,10 @@ from app.dependencies.auth_deps import get_current_user
 from app.services.location_service import serialize_user
 
 router = APIRouter()
+
+
+class UpdateProfileForm(UpdateProfileRequest):
+    profile_picture: UploadFile | None = None
 
 
 @router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
@@ -52,19 +56,11 @@ async def refresh(request: RefreshTokenRequest, db: AsyncSession = Depends(get_d
 
 @router.patch("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
 async def update_me(
-    name: Optional[str] = Form(None),
-    phone: Optional[str] = Form(None),
-    location_id: Optional[str] = Form(None),
-    profile_picture: Optional[UploadFile] = File(None),
+    data: Annotated[UpdateProfileForm, Form(media_type="multipart/form-data")],
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    data = UpdateProfileRequest(
-        name=name,
-        phone=phone,
-        location_id=location_id,
-    )
-    return await update_profile(current_user, data, profile_picture, db)
+    return await update_profile(current_user, data, data.profile_picture, db)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

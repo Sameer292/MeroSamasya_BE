@@ -313,9 +313,12 @@ async def update_issue(
                 # Write all three values even if another edit changed one since we loaded the issue.
                 for field in pin_fields:
                     flag_modified(issue, field)
-            for field in ("category_id", "title", "description", "address"):
+            for field in ("category_id", "title"):
                 if (value := getattr(data, field)) is not None:
                     setattr(issue, field, value)
+            for field in ("description", "address"):
+                if field in data.model_fields_set:
+                    setattr(issue, field, getattr(data, field))
 
             # Omitted retained IDs preserve the gallery unless new files replace it.
             if urls or retained_media_ids is not None:
