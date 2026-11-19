@@ -47,7 +47,7 @@ async def open_issue(
     latitude: float = Form(...),
     longitude: float = Form(...),
     address: Optional[str] = Form(None),
-    local_level_id: Optional[str] = Form(None),
+    local_level_id: str = Form(...),
     images: list[UploadFile] = File(default=[]),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

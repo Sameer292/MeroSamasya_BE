@@ -2,9 +2,10 @@ from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.models import Issue, IssueMedia, Category, User, Upvote
-from app.services.location_service import get_level_or_404
+from app.models.models import Issue, IssueMedia, Category, Upvote
+from app.services.report_area_service import report_feed_area_ids, validate_report_area
 from app.services.notification_service import notify
 from app.schemas.schema import IssueCreate, IssueUpdate
 from fastapi import HTTPException, status, UploadFile
@@ -65,16 +66,6 @@ def attach_votes(issues: list, current_user_id: str | None):
     return issues
 
 
-async def resolve_issue_level(
-    db: AsyncSession, explicit: str | None, citizen_id: str
-) -> str | None:
-    """Explicit area wins (validated); otherwise snapshot the reporter's area."""
-    if explicit is not None:
-        return str((await get_level_or_404(explicit, db)).id)
-    result = await db.execute(select(User.location_id).where(User.id == citizen_id))
-    return result.scalar_one_or_none()
-
-
 async def create_issue(
     data: IssueCreate,
     citizen_id: str,
@@ -99,6 +90,9 @@ async def create_issue(
     validate_image_files(images)
 
     try:
+        local_level_id = await validate_report_area(
+            db, data.local_level_id, data.latitude, data.longitude
+        )
         issue = Issue(
             citizen_id=citizen_id,
             category_id=data.category_id,
@@ -107,7 +101,7 @@ async def create_issue(
             latitude=data.latitude,
             longitude=data.longitude,
             address=data.address,
-            local_level_id=await resolve_issue_level(db, data.local_level_id, citizen_id),
+            local_level_id=local_level_id,
         )
         db.add(issue)
         await db.flush()
@@ -303,22 +297,24 @@ async def update_issue(
             )
 
     try:
+        pin_fields = ("latitude", "longitude", "local_level_id")
+        if any(getattr(data, field) is not None for field in pin_fields):
+            issue.local_level_id = await validate_report_area(
+                db, data.local_level_id, data.latitude, data.longitude
+            )
+            issue.latitude = data.latitude
+            issue.longitude = data.longitude
+            # Write all three values even if another edit changed one since we loaded the issue.
+            for field in pin_fields:
+                flag_modified(issue, field)
         if data.category_id is not None:
             issue.category_id = data.category_id
         if data.title is not None:
             issue.title = data.title
         if data.description is not None:
             issue.description = data.description
-        if data.latitude is not None:
-            issue.latitude = data.latitude
-        if data.longitude is not None:
-            issue.longitude = data.longitude
         if data.address is not None:
             issue.address = data.address
-        if data.local_level_id is not None:
-            issue.local_level_id = await resolve_issue_level(
-                db, data.local_level_id, citizen_id
-            )
 
         # ponytail: omitted list = legacy (replace-all iff new files arrive);
         # explicit list (even []) = retain exactly those, remove the rest.
@@ -440,17 +436,18 @@ async def get_issues_by_location(
         )
     try:
         offset = (page - 1) * limit
+        area_ids = await report_feed_area_ids(db, location_id)
 
         count_result = await db.execute(
             select(func.count(Issue.id)).where(
-                Issue.deleted_at.is_(None), Issue.local_level_id == location_id
+                Issue.deleted_at.is_(None), Issue.local_level_id.in_(area_ids)
             )
         )
         total = count_result.scalar()
 
         result = await db.execute(
             select(Issue)
-            .where(Issue.deleted_at.is_(None), Issue.local_level_id == location_id)
+            .where(Issue.deleted_at.is_(None), Issue.local_level_id.in_(area_ids))
             .options(
                 selectinload(Issue.media),
                 selectinload(Issue.category),

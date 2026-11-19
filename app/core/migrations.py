@@ -1,5 +1,8 @@
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy import select, text, update
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+
+from app.models.models import Issue
+from app.services.report_area_service import report_area_options
 
 
 async def run_startup_migrations(engine: AsyncEngine):
@@ -10,7 +13,6 @@ async def run_startup_migrations(engine: AsyncEngine):
        constraint, which would reject local_levels ids. Drop it.
     2. Issues.local_level_id did not exist on old databases. Add it.
     3. Restore the Categories.deleted_at column on older category databases.
-    4. Backfill issue area from the reporter's residence for pre-existing rows.
     Safe to run on every boot; each step is guarded/no-op when done.
     """
     backend = engine.url.get_backend_name()
@@ -42,14 +44,23 @@ async def run_startup_migrations(engine: AsyncEngine):
                 await conn.execute(
                     text('ALTER TABLE "Categories" ADD COLUMN deleted_at DATETIME')
                 )
-        else:
-            return
-        # ponytail: no silent catch here, a backfill failure must crash
-        # startup loudly instead of leaving half-migrated data behind.
-        await conn.execute(
-            text(
-                'UPDATE "Issues" SET local_level_id = '
-                '(SELECT location_id FROM "Users" WHERE "Users".id = "Issues".citizen_id) '
-                'WHERE local_level_id IS NULL'
+
+
+async def backfill_report_areas(db: AsyncSession):
+    issues = await db.execute(
+        select(Issue.id, Issue.latitude, Issue.longitude)
+        .where(Issue.local_level_id.is_(None))
+    )
+    for issue_id, latitude, longitude in issues:
+        if latitude is None or longitude is None:
+            continue
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            continue
+        areas = await report_area_options(db, latitude, longitude)
+        if len(areas) == 1:
+            await db.execute(
+                update(Issue.__table__)
+                .where(Issue.id == issue_id, Issue.local_level_id.is_(None))
+                .values(local_level_id=areas[0]["id"], updated_at=Issue.updated_at)
             )
-        )
+    await db.commit()
