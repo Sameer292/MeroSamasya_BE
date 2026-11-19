@@ -241,7 +241,7 @@ async def main():
         check("page=0 -> 422", r.status_code == 422)
         files = [("images", IMG)]
         report_data = {
-            "category_id": cat_id, "title": "Pothole on Main Road",
+            "category_id": cat_id, "title": "  Pothole on Main Road's <detour> & lane  \t",
             "latitude": "27.710", "longitude": "85.324",
             "local_level_id": report_level_id,
         }
@@ -254,6 +254,7 @@ async def main():
         r = await c.post("/api/issues/create", headers=H, data=report_data, files=files)
         check("create without desc/addr 201", r.status_code == 201)
         issue = r.json()["data"]
+        check("create trims title and preserves plain text", issue["title"] == report_data["title"].strip())
         check("explicit report area differs from residence", issue["local_level_id"] == str(report_level_id))
         check("local media url", issue["media"][0]["url"].startswith("/api/files/issues/"))
         r = await c.get(issue["media"][0]["url"])
@@ -261,6 +262,14 @@ async def main():
               and r.headers["Cache-Control"] == "no-store")
         iid = issue["id"]
         issue_photo = issue["media"][0]["url"]
+        for invalid_title in ("", " \t ", "  ab  ", "x" * 201):
+            r = await c.post("/api/issues/create", headers=H,
+                             data={**report_data, "title": invalid_title}, files=files)
+            check("create rejects an invalid title", r.status_code == 422
+                  and r.json()["detail"][0]["loc"] == ["body", "title"])
+            r = await c.patch(f"/api/issues/{iid}", headers=H, data={"title": invalid_title}, files=files)
+            check("edit rejects an invalid title", r.status_code == 422
+                  and r.json()["detail"][0]["loc"] == ["body", "title"])
         r = await c.post("/api/issues/create", headers=H, data={**report_data, "category_id": "nope"}, files=files)
         check("bad category 404", r.status_code == 404)
         r = await c.post("/api/issues/create", headers=H, data=report_data)
@@ -342,9 +351,12 @@ async def main():
         # --- edit media retain ---
         import json as jsonlib
         # --- edit media retain (mobile sends retained_media_ids JSON string) ---
-        r = await c.patch(f"/api/issues/{iid}", headers=H, data={"title": "Updated title here"},
+        edited_title = "Updated title: it's the <same> road & lane"
+        edited_title += "!" * (200 - len(edited_title))
+        r = await c.patch(f"/api/issues/{iid}", headers=H, data={"title": f"  {edited_title}  "},
                           files=[("images", IMG2)])
         check("edit replace-all legacy 200", r.status_code == 200 and len(r.json()["data"]["media"]) == 1)
+        check("edit trims a 200-character title and preserves plain text", r.json()["data"]["title"] == edited_title)
         check("replaced issue photo URL returns 404", (await c.get(issue_photo)).status_code == 404)
         check("metadata edit preserves the saved pin", (r.json()["data"]["latitude"], r.json()["data"]["local_level_id"])
               == (27.673, level_id))
@@ -353,6 +365,7 @@ async def main():
                           data={"retained_media_ids": jsonlib.dumps([kept])},
                           files=[("images", IMG), ("images", IMG2)])
         check("retain 1 + add 2 = 3", r.status_code == 200 and len(r.json()["data"]["media"]) == 3)
+        check("omitting a title preserves it", r.json()["data"]["title"] == edited_title)
         gallery = {media["id"]: media["url"] for media in r.json()["data"]["media"]}
         before_upload = set(storage.iterdir())
         r = await c.patch(f"/api/issues/{iid}", headers=H,

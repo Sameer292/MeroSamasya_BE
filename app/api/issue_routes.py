@@ -3,17 +3,20 @@ from fastapi import (
     Depends,
     HTTPException,
     Query,
+    Request,
     status,
     UploadFile,
     File,
     Form,
 )
-from typing import Optional
+from fastapi.exceptions import RequestValidationError
+from typing import Annotated, Optional
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.schema import (
     IssueResponse,
     IssueCreate,
+    IssueTitle,
     DeleteResponse,
     IssueUpdate,
     PaginatedIssueResponse,
@@ -41,8 +44,8 @@ router = APIRouter()
     "/create", response_model=IssueResponse, status_code=status.HTTP_201_CREATED
 )
 async def open_issue(
+    title: Annotated[IssueTitle, Form()],
     category_id: str = Form(...),
-    title: str = Form(..., min_length=3, max_length=200),
     description: Optional[str] = Form(None),
     latitude: float = Form(...),
     longitude: float = Form(...),
@@ -139,8 +142,9 @@ async def remove_issue(
 )
 async def edit_issue(
     issue_id: str,
+    request: Request,
     category_id: Optional[str] = Form(None),
-    title: Optional[str] = Form(None, min_length=3, max_length=200),
+    title: Annotated[IssueTitle | None, Form()] = None,
     description: Optional[str] = Form(None),
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
@@ -151,6 +155,11 @@ async def edit_issue(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # FastAPI treats an empty form string as missing, but only omission should skip an edit.
+    if title is None and "title" in await request.form():
+        raise RequestValidationError([
+            {"type": "value_error", "loc": ("body", "title"), "msg": "Title cannot be empty"}
+        ])
     data = IssueUpdate(
         category_id=category_id,
         title=title,
