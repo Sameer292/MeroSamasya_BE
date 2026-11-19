@@ -1,5 +1,13 @@
 # Mero Samasya backend
 
+## Issue references
+
+Display the full issue UUID from the API's `id` field as the issue reference.
+Use the same value in issue URLs and when sharing or looking up an issue.
+The web detail view already displays `issue.id`, and the numeric
+`issueNumber` field is used only in mock data. The API uses a single identifier,
+so existing issues need no backfill.
+
 ## Admin authentication
 
 The web admin portal uses `/api/auth/admin/login`, `/api/auth/admin/me`,
