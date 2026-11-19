@@ -39,6 +39,29 @@ configured portal origin. It revokes the presented portal session cookie and
 clears it from the browser. Portal sessions have no server-side timeout.
 Bearer-token clients use the JWT logout endpoint below.
 
+## Admin issue moderation
+
+`POST /api/admin/issues/{issue_id}/moderation` accepts a JSON body with
+`category_id`, `status`, or both. It requires an active admin or superadmin.
+Cookie-authenticated writes also require the configured admin portal origin.
+Category changes require an existing active category.
+
+| Current status | Allowed next statuses |
+| --- | --- |
+| `open` | `in_progress`, `resolved`, `closed` |
+| `in_progress` | `open`, `resolved`, `closed` |
+| `resolved` | `in_progress`, `closed` |
+| `closed` | `open` |
+
+Moving to `resolved` sets `resolved_at`. Closing a resolved issue keeps that
+timestamp. Reopening clears it. An invalid transition returns 409. Sending
+the current values succeeds with `data.event` set to null.
+
+`GET /api/admin/issues/{issue_id}/moderation` returns audit entries newest
+first, including the reviewer ID, timestamp, and previous and current values
+for each changed field. History remains readable after a soft delete.
+Issue changes and their audit entry are saved in one transaction.
+
 ## JWT refresh and logout
 
 `POST /api/auth/refresh` consumes the submitted refresh token and returns
