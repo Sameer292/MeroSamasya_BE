@@ -28,6 +28,7 @@ def validate_new_password(request: CitizenPasswordChangeRequest) -> str:
 
 
 async def replace_password(db: AsyncSession, user: User, password_hash: str) -> None:
+    """Store a verified change or reset and revoke all of the account's sessions."""
     updated_id = await db.scalar(
         update(User)
         .where(

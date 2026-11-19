@@ -1,11 +1,12 @@
 from email_validator import EmailNotValidError, validate_email
 from fastapi import HTTPException, status
 from passlib.context import CryptContext
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.models.models import User
+from app.schemas.enum import AccountStatusEnum
 from app.schemas.schema import UserCreate, UserLogin
 from app.services.account_access import require_active_account
 from app.services.notification_service import notify
@@ -101,7 +102,23 @@ async def authenticate_user(user: UserLogin, db: AsyncSession):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
 
-    return require_active_account(db_user)
+    require_active_account(db_user)
+    if db.get_bind().dialect.name == "sqlite":
+        # SQLite ignores FOR UPDATE. Confirm the verified password under a write lock.
+        locked = await db.scalar(
+            update(User.__table__)
+            .where(
+                User.id == db_user.id,
+                User.password == db_user.password,
+                User.account_status == AccountStatusEnum.active,
+                User.deleted_at.is_(None),
+            )
+            .values(updated_at=User.updated_at)
+            .returning(User.id)
+        )
+        if locked is None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
+    return db_user
 
 
 async def login_user(user: UserLogin, db: AsyncSession):

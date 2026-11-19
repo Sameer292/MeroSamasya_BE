@@ -13,6 +13,7 @@ async def run_startup_migrations(engine: AsyncEngine):
        constraint, which would reject local_levels ids. Drop it.
     2. Issues.local_level_id did not exist on old databases. Add it.
     3. Restore the Categories.deleted_at column on older category databases.
+    4. Give refresh-token records a stable session ID.
     Safe to run on every boot; each step is guarded/no-op when done.
     """
     backend = engine.url.get_backend_name()
@@ -30,6 +31,9 @@ async def run_startup_migrations(engine: AsyncEngine):
             await conn.execute(
                 text('ALTER TABLE "Categories" ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP')
             )
+            await conn.execute(
+                text('ALTER TABLE "RefreshTokens" ADD COLUMN IF NOT EXISTS session_id VARCHAR(64)')
+            )
         elif backend == "sqlite":
             cols = [
                 row[1]
@@ -44,6 +48,16 @@ async def run_startup_migrations(engine: AsyncEngine):
                 await conn.execute(
                     text('ALTER TABLE "Categories" ADD COLUMN deleted_at DATETIME')
                 )
+            token_cols = await conn.execute(text('PRAGMA table_info("RefreshTokens")'))
+            if "session_id" not in [row[1] for row in token_cols]:
+                await conn.execute(
+                    text('ALTER TABLE "RefreshTokens" ADD COLUMN session_id VARCHAR(64)')
+                )
+        if backend in ("postgresql", "sqlite"):
+            await conn.execute(
+                text('CREATE UNIQUE INDEX IF NOT EXISTS "ix_RefreshTokens_session_id" '
+                     'ON "RefreshTokens" (session_id)')
+            )
 
 
 async def backfill_report_areas(db: AsyncSession):

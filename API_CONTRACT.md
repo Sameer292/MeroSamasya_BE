@@ -14,14 +14,15 @@ Cookie-authenticated admin writes require the configured portal origin.
 | POST | `/api/auth/refresh` | no | `{refresh_token}` (must be a refresh token; access tokens 401) | `{access_token, refresh_token, user_id}` (rotated) |
 | GET | `/api/auth/me` | Bearer | — | `UserData` (see below) |
 | PATCH | `/api/auth/me` | Bearer | multipart `{name?, phone?, location_id?, profile_picture?}` | `UserData` |
-| POST | `/api/auth/change-password` | Bearer | `{current_password, new_password, confirm_new_password?}` (same strength rules; wrong current → 400) | 204 |
-| POST | `/api/auth/logout` | no | `{refresh_token}` | 204 |
+| POST | `/api/auth/change-password` | Bearer | `{current_password, new_password, confirm_new_password?}` (same strength rules; wrong current → 400) | 204, all of the account's sessions revoked |
+| POST | `/api/auth/logout` | no | `{refresh_token}` | 204, the submitted token's session revoked |
 
 `UserData = {id, email, name, phone, location: {id: string, name} | null,
 profile_picture_url, account_status, role, created_at, updated_at, deleted_at}`.
 Inactive and suspended users receive 403. Missing and deleted accounts
-receive 401. A consumed or revoked refresh token returns 401 for an active
-account. Register and login normalize email to lowercase.
+receive 401. Revoked sessions return 401 on bearer requests and refresh.
+Refresh tokens can be rotated once. Register and login normalize email to
+lowercase.
 
 ## Categories
 

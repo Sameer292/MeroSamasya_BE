@@ -76,17 +76,19 @@ the matching issues even when the requested page is empty.
 ## JWT refresh and logout
 
 `POST /api/auth/refresh` consumes the submitted refresh token and returns
-a new access and refresh token pair. Reusing a consumed or revoked token
-returns 401 for an active account.
+a new access and refresh token pair for the same session. Reusing a consumed
+or revoked token returns 401 for an active account.
 
 `POST /api/auth/logout` accepts `{"refresh_token": "..."}` and returns 204
-after revoking that refresh token. Repeating logout with the same signed,
-unexpired token is safe. Other logins remain active. Existing access tokens
-remain usable until expiry, subject to the account-status check.
+after revoking that login session. A signed refresh token can revoke its
+session even after rotation or expiry. Revocation invalidates both bearer
+access and refresh. Other logins remain active.
 
-The app creates the `RefreshTokens` table on startup. Refresh tokens issued
-before this change require a fresh login. Logout and refresh share the same
-stored token record, so a token can only be consumed once.
+Password changes revoke all bearer and portal sessions for the account.
+Password replacement after a verified reset uses the same transaction.
+
+On upgrade, older access tokens return 401 so clients refresh once to
+establish the session ID. Existing tracked refresh tokens can rotate as usual.
 
 ## Local run (SQLite, no extra services)
 
