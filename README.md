@@ -39,22 +39,28 @@ configured portal origin. It revokes the presented portal session cookie and
 clears it from the browser. Portal sessions have no server-side timeout.
 Bearer-token clients use the JWT logout endpoint below.
 
-## Admin subscribers
+## Admin issue reads
 
-`GET /api/admin/subscribers` lists citizen accounts. It accepts `search` for a
-case-insensitive substring match on name, email, or phone, and `account_status`
-for `active`, `inactive`, `suspended`, or `deleted`. The default includes all
-four states. Accounts with a deletion timestamp appear as deleted.
+`GET /api/admin/issues` and `GET /api/admin/issues/{issue_id}` require an
+active admin or superadmin. Both endpoints exclude soft-deleted issues. The
+detail endpoint returns 404 for a missing or soft-deleted issue. Each issue
+includes a `reporter` with only `id` and `name`, or `null` when no reporter
+is associated with it.
 
-`GET /api/admin/subscribers/{subscriber_id}` returns the citizen profile and
-paginated `data.issue_history`. Both endpoints require an active admin or
-superadmin and return `reported_count` and `resolved_count`. Counts and history
-include issues that have not been soft-deleted. Resolved counts include issues
-with status `resolved`. The `kyc_status` field is null until KYC data is available.
+The list accepts these query parameters.
 
-Both endpoints accept a one-based `page` and a `limit` of 1 through 100, defaulting
-to 1 and 10. Accounts and issues are ordered newest first, with ID breaking ties.
-Pagination totals are returned even when the requested page is empty.
+| Parameter | Behavior |
+| --- | --- |
+| `search` | Case-insensitive substring match across title, description, and address. Blank values are ignored. |
+| `status` | Exact match on `open`, `in_progress`, `resolved`, or `closed`. |
+| `category_id` | Exact match on the category ID. |
+| `sort` | `newest` (default) or `oldest`, ordered by creation time with issue ID breaking ties. |
+| `page` | One-based page number. Defaults to 1. |
+| `limit` | Page size from 1 to 100. Defaults to 10. |
+
+Search and filters combine. The response contains `data.issues` and
+`data.meta` with `total`, `page`, `limit`, and `total_pages`. Totals reflect
+the matching issues even when the requested page is empty.
 
 ## JWT refresh and logout
 
