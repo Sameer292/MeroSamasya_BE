@@ -82,37 +82,3 @@ async def update_profile(
         )
 
     return await serialize_user(db, updated_user, "Profile updated successfully")
-
-
-async def change_password(
-    user: User,
-    current_password: str,
-    new_password: str,
-    db: AsyncSession,
-):
-    from app.services.auth_service import verify_password, hash_password
-
-    # ponytail: snapshot id first, never touch expired attributes later
-    user_id = str(user.id)
-    result = await db.execute(select(User).where(User.id == user_id))
-    db_user = result.scalar_one()
-    if not verify_password(current_password, str(db_user.password)):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Current password is incorrect",
-        )
-    try:
-        await db.execute(
-            User.__table__
-            .update()
-            .where(User.id == user_id)
-            .values(password=hash_password(new_password))
-        )
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to change password.",
-        )
-    return {"message": "Password changed successfully"}

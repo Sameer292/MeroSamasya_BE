@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status, UploadFile, File, Form
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import User
-from app.schemas.password_change import PasswordChangeRequest
+from app.schemas.password_change import CitizenPasswordChangeRequest
 from app.schemas.schema import (
     UserCreate,
     UserLogin,
@@ -74,7 +74,7 @@ async def logout(request: RefreshTokenRequest, db: AsyncSession = Depends(get_db
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_user_password(
-    request: PasswordChangeRequest,
+    request: CitizenPasswordChangeRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

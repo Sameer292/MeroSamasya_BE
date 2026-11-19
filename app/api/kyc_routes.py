@@ -1,8 +1,6 @@
-import os
-import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, File, UploadFile, status, HTTPException, Header
+from fastapi import APIRouter, Depends, Form, File, UploadFile, status, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +9,9 @@ from app.services.kyc_service import submit_kyc, get_my_kyc, DOC_FIELDS
 from app.models.models import KycSubmission
 from app.core.database import get_db
 from app.core.storage import local_path
-from app.dependencies.auth_deps import get_current_user
+from app.core.admin_config import NO_STORE
+from app.dependencies.admin_deps import AdminSessionCookie, check_admin_role, require_admin
+from app.dependencies.auth_deps import BearerCredentials, get_current_user
 
 router = APIRouter()
 
@@ -66,27 +66,23 @@ async def my_kyc(
 @router.get("/documents/{doc}")
 async def get_document(
     doc: str,
+    credentials: BearerCredentials,
     user_id: Optional[str] = None,
-    current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    x_admin_key: Optional[str] = Header(default=None),
+    session: AdminSessionCookie = None,
 ):
     field = dict(DOC_FIELDS).get(doc)
     if field is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
-    target_id = user_id or str(current_user.id)
-    if target_id != str(current_user.id):
-        expected = os.getenv("ADMIN_API_KEY") or ""
-        if (
-            not expected
-            or not x_admin_key
-            or not secrets.compare_digest(x_admin_key, expected)
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
-            )
+    if credentials is None and session:
+        current_user = await require_admin(credentials, db, session)
+    else:
+        current_user = await get_current_user(credentials, db)
+    target_id = user_id or current_user.id
+    if target_id != current_user.id:
+        check_admin_role(current_user)
     result = await db.execute(
         select(KycSubmission).where(KycSubmission.user_id == target_id)
     )
@@ -101,4 +97,4 @@ async def get_document(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
-    return FileResponse(path)
+    return FileResponse(path, headers=NO_STORE)

@@ -1,9 +1,9 @@
 # MeroSamasya Backend — Mobile API Contract
 
 Base URL (local): `http://<host>:8000`. Authenticated requests send
-`Authorization: Bearer <access_token>`. Admin requests additionally send
-`X-Admin-Key: <ADMIN_API_KEY>`. Every JSON response is enveloped as
-`{ "message": string, "data": ... }`.
+`Authorization: Bearer <access_token>`. Admin endpoints require an active
+admin or superadmin with a bearer access token or the portal session cookie.
+Cookie-authenticated admin writes require the configured portal origin.
 
 ## Auth (`/api/auth`)
 
@@ -14,12 +14,14 @@ Base URL (local): `http://<host>:8000`. Authenticated requests send
 | POST | `/api/auth/refresh` | no | `{refresh_token}` (must be a refresh token; access tokens 401) | `{access_token, refresh_token, user_id}` (rotated) |
 | GET | `/api/auth/me` | Bearer | — | `UserData` (see below) |
 | PATCH | `/api/auth/me` | Bearer | multipart `{name?, phone?, location_id?, profile_picture?}` | `UserData` |
-| POST | `/api/auth/change-password` | Bearer | `{current_password, new_password}` (same strength rules; wrong current → 401) | `{message}` only |
+| POST | `/api/auth/change-password` | Bearer | `{current_password, new_password, confirm_new_password?}` (same strength rules; wrong current → 400) | 204 |
+| POST | `/api/auth/logout` | no | `{refresh_token}` | 204 |
 
 `UserData = {id, email, name, phone, location: {id: string, name} | null,
-profile_picture_url, account_status, created_at, updated_at, deleted_at}`.
-Inactive/suspended/deleted users get 403 on authenticated routes and 401 on
-refresh. Register/login normalize email to lowercase.
+profile_picture_url, account_status, role, created_at, updated_at, deleted_at}`.
+Inactive and suspended users receive 403. Missing and deleted accounts
+receive 401. A consumed or revoked refresh token returns 401 for an active
+account. Register and login normalize email to lowercase.
 
 ## Categories
 
@@ -74,7 +76,7 @@ legacy behavior (new files replace all; no files touches nothing). Explicit
 |---|---|---|---|
 | POST | `/api/kyc/submit` | multipart: `fullName, citizenshipNumber, gender (male/female/other), dateOfBirth (ISO), issuedDate (ISO), wardNumber, tole?, province/district/municipality (JSON `{id, name}` from this API), files `selfiePhoto, documentFrontPhoto, documentBackPhoto` (images, ≤5 MB) | 201 `{status: pending}`. Area id is verified against live geo data (400 on mismatch). Resubmit blocked while pending/approved (409); allowed after rejection |
 | GET | `/api/kyc/me` | — | own submission + status; `documents: {selfie, front, back}` link paths, never file paths |
-| GET | `/api/kyc/documents/{selfie\|front\|back}[?user_id=]` | — | file bytes. Owner only; `?user_id=` + `X-Admin-Key` for review |
+| GET | `/api/kyc/documents/{selfie\|front\|back}[?user_id=]` | — | Private file bytes. Citizens can read their own documents. Admins can read a submission for the specified user. |
 
 Identity documents are stored on local disk only and never exposed as public
 URLs. On resubmission, new files commit first and old files are deleted only
@@ -96,19 +98,19 @@ status changes, KYC decisions.
 `GET /api/files/{issues|profiles}/{name}` serves locally stored uploads.
 `kyc` is never servable here.
 
-## Admin (`/api/admin`, `X-Admin-Key` required)
+## Admin (`/api/admin`, admin or superadmin required)
 
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| GET | `/api/admin/issues?page&limit&status&category_id` | — | paginated, filters optional |
+| GET | `/api/admin/issues?page&limit&status&category_id&search&sort` | — | paginated results with reporter details and optional filters |
 | GET | `/api/admin/issues/overview` | — | `{open, in_progress, resolved, closed, total_issues, total_users, kyc_pending}` |
-| PATCH | `/api/admin/issues/{id}/status` | `{status}` | forward-only: open→in_progress→resolved→closed (else 400); sets `resolved_at`; notifies owner |
+| PATCH | `/api/admin/issues/{id}/status` | `{status}` | Applies the moderation transition policy (409 for an invalid transition), records the change and notifies the owner |
 | GET | `/api/admin/kyc?page&limit&status` | — | submissions with status |
 | PATCH | `/api/admin/kyc/{id}` | `{status: approved\|rejected, note?}` | notifies the user |
 
 ## Status codes
 
-422 validation, 400 bad input/state, 401 bad credentials/token, 403
-forbidden (incl. missing admin key, non-owner), 404 missing, 409 conflict
+422 validation, 400 bad input/state, 401 missing or invalid credentials, 403
+forbidden (incl. insufficient role or non-owner), 404 missing, 409 conflict
 (duplicate register/category, KYC resubmit guard, seeded data), 500/503
 server/unconfigured uploads.

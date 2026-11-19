@@ -24,16 +24,6 @@ PhoneNumber = Annotated[
 ]
 
 
-def check_password_strength(v: str) -> str:
-    if len(v) < 8:
-        raise ValueError("Password must be at least 8 characters")
-    if not re.search(r"[a-zA-Z]", v):
-        raise ValueError("Password must contain at least one letter")
-    if not re.search(r"[0-9]", v):
-        raise ValueError("Password must contain at least one number")
-    return v
-
-
 class UserCreate(BaseModel):
     name: FullName
     phone: PhoneNumber
@@ -118,16 +108,6 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
-
-    @field_validator("new_password")
-    @classmethod
-    def validate_new_password(cls, v):
-        return check_password_strength(v)
 
 
 class UpdateProfileRequest(BaseModel):

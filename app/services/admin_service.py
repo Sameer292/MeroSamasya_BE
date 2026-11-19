@@ -1,127 +1,22 @@
 import math
-from datetime import datetime, timezone
 
 from sqlalchemy import select, func
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 from app.models.models import Issue, User, KycSubmission
 from app.schemas.enum import IssueStatusEnum, KycStatusEnum
-from app.services.issue_service import attach_votes
+from app.schemas.issue_moderation import IssueModerationRequest
+from app.services.issue_moderation_service import moderate_issue
+from app.services.issue_service import get_issue_by_id
 from app.services.kyc_service import serialize_kyc
 from app.services.notification_service import notify
 
-ALLOWED_TRANSITIONS = {
-    IssueStatusEnum.open: {IssueStatusEnum.in_progress},
-    IssueStatusEnum.in_progress: {IssueStatusEnum.resolved},
-    IssueStatusEnum.resolved: {IssueStatusEnum.closed},
-    IssueStatusEnum.closed: set(),
-}
-
-STATUS_LABELS = {
-    IssueStatusEnum.open: "Open",
-    IssueStatusEnum.in_progress: "In Progress",
-    IssueStatusEnum.resolved: "Resolved",
-    IssueStatusEnum.closed: "Closed",
-}
-
-
-async def admin_list_issues(
-    page: int,
-    limit: int,
-    status_filter: IssueStatusEnum | None,
-    category_id: str | None,
-    db: AsyncSession,
-):
-    try:
-        offset = (page - 1) * limit
-        filters = [Issue.deleted_at.is_(None)]
-        if status_filter is not None:
-            filters.append(Issue.status == status_filter)
-        if category_id is not None:
-            filters.append(Issue.category_id == category_id)
-        total = (
-            await db.execute(select(func.count(Issue.id)).where(*filters))
-        ).scalar() or 0
-        result = await db.execute(
-            select(Issue)
-            .where(*filters)
-            .options(
-                selectinload(Issue.media),
-                selectinload(Issue.category),
-                selectinload(Issue.upvotes),
-            )
-            .order_by(Issue.created_at.desc())
-            .offset(offset)
-            .limit(limit)
-        )
-        issues = attach_votes(list(result.scalars().all()), None)
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch issues.",
-        )
-    return {
-        "message": "Issues fetched successfully",
-        "data": {
-            "meta": {
-                "total": total,
-                "page": page,
-                "limit": limit,
-                "total_pages": math.ceil(total / limit) if limit else 0,
-            },
-            "issues": issues,
-        },
-    }
-
-
 async def admin_update_status(
-    issue_id: str, new_status: IssueStatusEnum, db: AsyncSession
+    issue_id: str, new_status: IssueStatusEnum, reviewer_id: str, db: AsyncSession
 ):
-    result = await db.execute(
-        select(Issue)
-        .where(Issue.id == issue_id, Issue.deleted_at.is_(None))
-        .options(
-            selectinload(Issue.media),
-            selectinload(Issue.category),
-            selectinload(Issue.upvotes),
-        )
-    )
-    issue = result.scalar_one_or_none()
-    if not issue:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Issue not found."
-        )
-    if new_status != issue.status and new_status not in ALLOWED_TRANSITIONS[issue.status]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot move issue from {issue.status.value} to {new_status.value}.",
-        )
-    try:
-        issue.status = new_status
-        if new_status == IssueStatusEnum.resolved:
-            issue.resolved_at = datetime.now(timezone.utc)
-        if issue.citizen_id:
-            notify(
-                db,
-                issue.citizen_id,
-                "status",
-                "Status update",
-                f"Your report '{issue.title}' is now {STATUS_LABELS[new_status]}.",
-                issue_id=issue.id,
-            )
-        await db.commit()
-        await db.refresh(issue)
-        attach_votes([issue], None)
-    except HTTPException:
-        raise
-    except Exception:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update issue status.",
-        )
-    return {"message": "Issue status updated successfully", "data": issue}
+    await moderate_issue(db, issue_id, reviewer_id, IssueModerationRequest(status=new_status))
+    issue = await get_issue_by_id(issue_id, db)
+    return {"message": "Issue status updated successfully", "data": issue["data"]}
 
 
 async def admin_overview(db: AsyncSession):

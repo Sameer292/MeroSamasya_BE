@@ -62,6 +62,7 @@ def root():
 
 
 app.include_router(admin_auth_routes.router, prefix="/api/auth/admin", tags=["Admin Authentication"])
+app.include_router(admin_routes.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(admin_issue_routes.router, prefix="/api/admin/issues", tags=["Admin Issues"])
 app.include_router(
     admin_subscriber_routes.router, prefix="/api/admin/subscribers", tags=["Admin Subscribers"]
@@ -77,7 +78,6 @@ app.include_router(
     notification_routes.router, prefix="/api/notifications", tags=["Notifications"]
 )
 app.include_router(kyc_routes.router, prefix="/api/kyc", tags=["KYC"])
-app.include_router(admin_routes.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(
     all_nepal_location_routes.router, prefix="/api/nepal", tags=["Nepal Location"]
 )

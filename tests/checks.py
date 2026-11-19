@@ -12,13 +12,15 @@ import tempfile
 
 TMP = tempfile.mkdtemp(prefix="merosamasya-checks-")
 os.environ["LOCAL_STORAGE_DIR"] = os.path.join(TMP, "storage")
-os.environ["ADMIN_API_KEY"] = "test-admin-key"
-os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ["ADMIN_WEB_ORIGIN"] = "https://admin.test"
+os.environ["ADMIN_COOKIE_SECURE"] = "true"
+os.environ.setdefault("JWT_SECRET", "merosamasya-local-contract-test-not-a-secret")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 DB_PATH = os.path.join(TMP, "checks.db")
+os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{DB_PATH}"
 
 PASS = []
 
@@ -37,6 +39,7 @@ async def main():
     from app.core.database import Base, get_db
     from app.models import models  # noqa: F401
     from app.models import nepal_location_models  # noqa: F401
+    from app.models.admin_auth import AdminMembership
     from app.models.models import User
     from app.models.nepal_location_models import Province, District, LocalLevel
     from app.schemas.enum import LocalLevelType, AccountStatusEnum
@@ -89,12 +92,16 @@ async def main():
         check("wrong password 401", r.status_code == 401)
         r = await c.post("/api/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
         check("refresh 200", r.status_code == 200)
+        rotated_refresh = r.json()["data"]["refresh_token"]
+        r = await c.post("/api/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+        check("consumed refresh token rejected", r.status_code == 401)
         r = await c.post("/api/auth/refresh", json={"refresh_token": tokens["access_token"]})
         check("access-as-refresh 401", r.status_code == 401)
         r = await c.post("/api/auth/refresh", json={"refresh_token": "garbage"})
         check("garbage refresh 401 not 500", r.status_code == 401)
         r = await c.get("/api/auth/me", headers=H)
-        check("me 200, location null", r.status_code == 200 and r.json()["data"]["location"] is None)
+        check("me returns citizen role and null location", r.status_code == 200
+              and r.json()["data"]["location"] is None and r.json()["data"]["role"] == "citizen")
 
         # suspended user blocked everywhere
         async with Session() as s:
@@ -103,8 +110,8 @@ async def main():
             await s.commit()
         r = await c.get("/api/auth/me", headers=H)
         check("suspended /me 403", r.status_code == 403)
-        r = await c.post("/api/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
-        check("suspended refresh 401", r.status_code == 401)
+        r = await c.post("/api/auth/refresh", json={"refresh_token": rotated_refresh})
+        check("suspended refresh 403", r.status_code == 403)
         async with Session() as s:
             u = (await s.execute(select(User).where(User.email == "test@example.com"))).scalar_one()
             u.account_status = AccountStatusEnum.active
@@ -115,8 +122,18 @@ async def main():
         check("mobile categories alias 200", r.status_code == 200 and len(r.json()["data"]) == 9)
         cat_id = r.json()["data"][0]["id"]
         r = await c.post("/api/category/", json={"name": "X", "icon": "i", "color": "#fff"})
-        check("category write unauth 403", r.status_code == 403)
-        AH = {"X-Admin-Key": "test-admin-key"}
+        check("category write unauth 401", r.status_code == 401)
+        r = await c.post("/api/category/", headers=H, json={"name": "Parks", "icon": "ri-tree", "color": "#fff"})
+        check("citizen category write 403", r.status_code == 403)
+        admin_login = {"email": "admin@example.com", "password": "pass1234"}
+        r = await c.post("/api/auth/register", json={
+            **admin_login, "confirm_password": "pass1234", "name": "Test Admin", "phone": "9800000003"})
+        admin_id = r.json()["data"]["user_id"]
+        async with Session() as s:
+            s.add(AdminMembership(user_id=admin_id, role="admin"))
+            await s.commit()
+        r = await c.post("/api/auth/login", json=admin_login)
+        AH = {"Authorization": f"Bearer {r.json()['data']['access_token']}"}
         r = await c.post("/api/category/", json={"name": "Parks", "icon": "ri-tree", "color": "#fff"}, headers=AH)
         check("admin create category 201", r.status_code == 201)
         new_cat = r.json()["data"]["id"]
@@ -246,10 +263,15 @@ async def main():
         check("profile bad location 404", r.status_code == 404)
         r = await c.post("/api/auth/change-password", headers=H, json={
             "current_password": "nope1234", "new_password": "newpass123"})
-        check("wrong current password 401", r.status_code == 401)
+        check("wrong current password 400", r.status_code == 400)
+        r = await c.post("/api/auth/change-password", headers=H, json={
+            "current_password": "pass1234", "new_password": "newpass123", "confirm_new_password": "different1"})
+        check("explicit password confirmation still validated", r.status_code == 400)
         r = await c.post("/api/auth/change-password", headers=H, json={
             "current_password": "pass1234", "new_password": "newpass123"})
-        check("password change 200", r.status_code == 200)
+        check("mobile password change without confirmation 204", r.status_code == 204)
+        r = await c.post("/api/auth/refresh", json={"refresh_token": rotated_refresh})
+        check("password change revokes refresh tokens", r.status_code == 401)
         r = await c.post("/api/auth/login", json={"email": "test@example.com", "password": "newpass123"})
         check("login with new password 200", r.status_code == 200)
 
@@ -293,16 +315,31 @@ async def main():
 
         # --- admin ---
         r = await c.get("/api/admin/issues/overview")
-        check("admin no key 403", r.status_code == 403)
+        check("admin without credentials 401", r.status_code == 401)
         r = await c.get("/api/admin/issues/overview", headers=AH)
         check("overview 200", r.status_code == 200 and r.json()["data"]["total_issues"] == 1)
-        r = await c.patch(f"/api/admin/issues/{iid}/status", headers=AH, json={"status": "resolved"})
-        check("invalid jump open->resolved 400", r.status_code == 400)
+        r = await c.get("/api/admin/issues", headers=AH, params={"search": "updated title"})
+        check("main admin issue search retains reporter and filters", r.status_code == 200
+              and r.json()["data"]["issues"][0]["reporter"]["id"] == owner_id)
+        r = await c.get(f"/api/admin/subscribers/{owner_id}", headers=AH)
+        check("main subscriber detail resolves a live local level", r.status_code == 200
+              and r.json()["data"]["location"] == {"id": str(level_id), "name": "Lalitpur Metro"})
+        r = await c.post(f"/api/admin/issues/{iid}/moderation", headers=AH, json={"category_id": new_cat})
+        check("main moderation can assign an active category", r.status_code == 200)
+        r = await c.delete(f"/api/category/{new_cat}", headers=AH)
+        check("admin can retire a category", r.status_code == 200)
+        r = await c.get("/api/issues/categories")
+        check("retired category hidden from the picker", all(row["id"] != new_cat for row in r.json()["data"]))
+        r = await c.get(f"/api/issues/{iid}", headers=H)
+        check("retiring category preserves issue history", r.json()["data"]["category"]["id"] == new_cat)
         r = await c.patch(f"/api/admin/issues/{iid}/status", headers=AH, json={"status": "in_progress"})
         check("status open->in_progress 200", r.status_code == 200
               and r.json()["data"]["status"] == "in_progress")
         r = await c.get("/api/notifications", headers=H)
         check("owner notified of status", any(n["type"] == "status" for n in r.json()["data"]["notifications"]))
+        r = await c.get(f"/api/admin/issues/{iid}/moderation", headers=AH)
+        check("status endpoint writes moderation audit history", r.status_code == 200
+              and any(change["field"] == "status" for event in r.json()["data"] for change in event["changes"]))
         r = await c.get("/api/admin/kyc", headers=AH)
         check("admin kyc list 1 pending", r.status_code == 200
               and r.json()["data"]["meta"]["total"] == 1)
@@ -321,8 +358,19 @@ async def main():
         check("old docs replaced, 3 files", len(os.listdir(kyc_dir)) == 3)
         r = await c.get("/api/kyc/documents/front", headers=H)
         check("new doc served 200", r.status_code == 200)
-        r = await c.get("/api/kyc/documents/selfie", headers={**H, **AH}, params={"user_id": owner_id})
+        r = await c.get("/api/kyc/documents/selfie", headers=AH, params={"user_id": owner_id})
         check("admin reads owner doc 200", r.status_code == 200)
+        async with httpx.AsyncClient(transport=transport, base_url="https://t") as portal:
+            origin = {"Origin": os.environ["ADMIN_WEB_ORIGIN"]}
+            r = await portal.post("/api/auth/admin/login", json=admin_login, headers=origin)
+            check("main admin cookie login 204", r.status_code == 204)
+            r = await portal.post("/api/category/seed")
+            check("cookie-authenticated category write requires portal origin", r.status_code == 403)
+            r = await portal.post("/api/category/seed", headers=origin)
+            check("portal cookie can seed categories", r.status_code == 201)
+            r = await portal.get("/api/kyc/documents/selfie", params={"user_id": owner_id})
+            check("portal cookie can read authorized document", r.status_code == 200
+                  and r.headers["Cache-Control"] == "private, no-store")
         r = await c.delete("/api/notifications", headers=H)
         check("clear-all 200", r.status_code == 200)
         r = await c.get("/api/notifications", headers=H)
@@ -339,6 +387,16 @@ async def main():
         check("owner delete 200", r.status_code == 200)
         r = await c.get(f"/api/issues/{iid2}", headers=H)
         check("deleted detail 404", r.status_code == 404)
+
+        async with Session() as s:
+            user = await s.get(User, owner_id)
+            s.add(User(email="Test@example.com", name="Legacy User", password=user.password))
+            await s.commit()
+        r = await c.post("/api/auth/login", json={"email": "test@example.com", "password": "newpass123"})
+        check("legacy email case variants preserve exact login", r.status_code == 200
+              and r.json()["data"]["user_id"] == owner_id)
+        r = await c.post("/api/auth/login", json={"email": "TEST@example.com", "password": "newpass123"})
+        check("ambiguous legacy email case returns 401", r.status_code == 401)
 
     await engine.dispose()
     print(f"\nALL {len(PASS)} CHECKS PASSED")

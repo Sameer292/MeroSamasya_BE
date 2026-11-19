@@ -61,8 +61,10 @@ async def create_registered_user(user: UserCreate, email: str, db: AsyncSession)
 
 async def register_user(user: UserCreate, db: AsyncSession):
     email = normalize_registration_email(user.email)
-    existing = await db.execute(select(User).where(func.lower(User.email) == email))
-    if existing.scalar_one_or_none():
+    existing = await db.scalar(
+        select(User.id).where(func.lower(User.email) == email).limit(1)
+    )
+    if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
@@ -76,16 +78,22 @@ async def register_user(user: UserCreate, db: AsyncSession):
 
 async def authenticate_user(user: UserLogin, db: AsyncSession):
     try:
-        result = await db.execute(
-            select(User).where(func.lower(User.email) == user.email.lower()).with_for_update()
+        statement = (
+            select(User)
+            .where(func.lower(User.email) == user.email.lower())
+            .order_by((User.email == user.email).desc())
+            .limit(2)
+            .with_for_update()
         )
-        db_user = result.scalar_one_or_none()
+        matches = (await db.scalars(statement)).all()
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed. Please try again.",
         )
 
+    # Older databases could contain multiple case variants of an address.
+    db_user = matches[0] if matches and (len(matches) == 1 or matches[0].email == user.email) else None
     if not db_user or not await run_in_threadpool(
         verify_password, user.password, str(db_user.password)
     ):

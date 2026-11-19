@@ -81,7 +81,9 @@ async def create_issue(
     db: AsyncSession,
     images: list[UploadFile] = [],
 ):
-    category = await db.execute(select(Category).where(Category.id == data.category_id))
+    category = await db.execute(
+        select(Category).where(Category.id == data.category_id, Category.deleted_at.is_(None))
+    )
     if not category.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -290,9 +292,9 @@ async def update_issue(
 
     validate_image_files(images)
 
-    if data.category_id is not None:
+    if data.category_id is not None and data.category_id != issue.category_id:
         category = await db.execute(
-            select(Category).where(Category.id == data.category_id)
+            select(Category).where(Category.id == data.category_id, Category.deleted_at.is_(None))
         )
         if not category.scalar_one_or_none():
             raise HTTPException(
