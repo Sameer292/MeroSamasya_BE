@@ -160,7 +160,7 @@ class IssueMediaResponse(BaseModel):
 
 
 class IssueData(BaseModel):
-    id: str
+    id: str = Field(description="Stable issue UUID used in URLs and as the displayed reference.")
     citizen_id: Optional[str] = None
     category: Optional[CategoryResponse] = None
     title: str
