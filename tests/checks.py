@@ -9,6 +9,7 @@ import asyncio
 import os
 import sys
 import tempfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 TMP = tempfile.mkdtemp(prefix="merosamasya-checks-")
@@ -36,21 +37,33 @@ def check(name, cond):
 
 async def main():
     import httpx
+    import jwt
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
+    import main as app_module
     from app.core.database import Base, get_db
     from app.core.migrations import backfill_report_areas, run_startup_migrations
-    from app.models import models  # noqa: F401
-    from app.models import nepal_location_models  # noqa: F401
+    from app.models import (
+        models,  # noqa: F401
+        nepal_location_models,  # noqa: F401
+    )
     from app.models.admin_auth import AdminMembership
     from app.models.models import Issue, User
-    from app.models.nepal_location_models import Province, District, LocalLevel
-    from app.schemas.enum import LocalLevelType, AccountStatusEnum
+    from app.models.nepal_location_models import District, LocalLevel, Province
+    from app.models.refresh_token import RefreshToken
+    from app.schemas.enum import AccountStatusEnum, LocalLevelType
+    from app.services.auth_service import hash_password
     from app.services.category_service import ensure_default_categories
+    from app.services.jwt_tokens import JWT_ALGORITHM, JWT_SECRET
     from app.services.nepal_location_service import load_bundled_seed
+    from app.services.password_change import replace_password
     from app.services.report_area_service import boundaries
-    import main as app_module
+    from app.services.token_digest import digest_token
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{DB_PATH}")
     async with engine.begin() as conn:
@@ -116,17 +129,61 @@ async def main():
         H = {"Authorization": f"Bearer {tokens['access_token']}"}
         r = await c.post("/api/auth/login", json={"email": "test@example.com", "password": "wrongpass1"})
         check("wrong password 401", r.status_code == 401)
-        r = await c.post("/api/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
-        check("refresh 200", r.status_code == 200)
-        rotated_refresh = r.json()["data"]["refresh_token"]
+        concurrent_refreshes = await asyncio.gather(*(
+            c.post("/api/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+            for _ in range(2)
+        ))
+        check("concurrent refresh has one winner",
+              sorted(r.status_code for r in concurrent_refreshes) == [200, 401])
+        rotated_refresh = next(r.json()["data"]["refresh_token"]
+                               for r in concurrent_refreshes if r.status_code == 200)
         r = await c.post("/api/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
         check("consumed refresh token rejected", r.status_code == 401)
         r = await c.post("/api/auth/refresh", json={"refresh_token": tokens["access_token"]})
         check("access-as-refresh 401", r.status_code == 401)
         r = await c.post("/api/auth/refresh", json={"refresh_token": "garbage"})
         check("garbage refresh 401 not 500", r.status_code == 401)
+
+        # An existing session upgrades on refresh. Logout may still receive its old token.
+        expires = datetime.now(UTC) + timedelta(days=1)
+        legacy_jwt = {"sub": owner_id, "exp": expires}
+        legacy_access = jwt.encode({**legacy_jwt, "refresh": False}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        legacy_refresh = jwt.encode({**legacy_jwt, "refresh": True}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        async with Session() as s:
+            s.add(RefreshToken(user_id=owner_id, token_digest=digest_token(legacy_refresh),
+                               expires_at=int(expires.timestamp())))
+            await s.commit()
+        r = await c.get("/api/auth/me", headers={"Authorization": f"Bearer {legacy_access}"})
+        check("legacy access requires a refresh", r.status_code == 401)
+        r = await c.post("/api/auth/refresh", json={"refresh_token": legacy_refresh})
+        check("legacy refresh upgrades the session", r.status_code == 200)
+        second_device = r.json()["data"]
+        second_headers = {"Authorization": f"Bearer {second_device['access_token']}"}
+        r = await c.get("/api/auth/me", headers=second_headers)
+        check("upgraded session can access account", r.status_code == 200)
+        for _ in range(2):
+            r = await c.post("/api/auth/logout", json={"refresh_token": legacy_refresh})
+            check("logout with a rotated refresh token is idempotent", r.status_code == 204)
+        r = await c.post("/api/auth/refresh", json={"refresh_token": second_device["refresh_token"]})
+        check("logged-out session cannot refresh its newest token", r.status_code == 401)
+        r = await c.get("/api/auth/me", headers=second_headers)
+        check("logged-out session loses bearer access", r.status_code == 401)
+
+        r = await c.post("/api/auth/login", json={"email": "test@example.com", "password": "pass1234"})
+        refresh_body = {"refresh_token": r.json()["data"]["refresh_token"]}
+        refreshed, logged_out = await asyncio.gather(
+            c.post("/api/auth/refresh", json=refresh_body),
+            c.post("/api/auth/logout", json=refresh_body),
+        )
+        check("logout racing refresh succeeds", logged_out.status_code == 204
+              and refreshed.status_code in (200, 401))
+        if refreshed.status_code == 200:
+            refresh_body = {"refresh_token": refreshed.json()["data"]["refresh_token"]}
+        r = await c.post("/api/auth/refresh", json=refresh_body)
+        check("no active refresh token survives racing logout", r.status_code == 401)
+
         r = await c.get("/api/auth/me", headers=H)
-        check("me returns citizen role and null location", r.status_code == 200
+        check("other session stays active and returns citizen role and null location", r.status_code == 200
               and r.json()["data"]["location"] is None and r.json()["data"]["role"] == "citizen")
 
         # suspended user blocked everywhere
@@ -361,13 +418,29 @@ async def main():
         r = await c.post("/api/auth/change-password", headers=H, json={
             "current_password": "pass1234", "new_password": "newpass123", "confirm_new_password": "different1"})
         check("explicit password confirmation still validated", r.status_code == 400)
-        r = await c.post("/api/auth/change-password", headers=H, json={
-            "current_password": "pass1234", "new_password": "newpass123"})
-        check("mobile password change without confirmation 204", r.status_code == 204)
-        r = await c.post("/api/auth/refresh", json={"refresh_token": rotated_refresh})
-        check("password change revokes refresh tokens", r.status_code == 401)
+        r = await c.post("/api/auth/login", json={"email": "test@example.com", "password": "pass1234"})
+        other_device = r.json()["data"]
+        changed, refreshed = await asyncio.gather(
+            c.post("/api/auth/change-password", headers=H, json={
+                "current_password": "pass1234", "new_password": "newpass123"}),
+            c.post("/api/auth/refresh", json={"refresh_token": other_device["refresh_token"]}),
+        )
+        check("mobile password change without confirmation 204", changed.status_code == 204)
+        check("refresh racing password change either rotates or is revoked",
+              refreshed.status_code in (200, 401))
+        if refreshed.status_code == 200:
+            other_device = refreshed.json()["data"]
+        other_device_headers = {"Authorization": f"Bearer {other_device['access_token']}"}
+        for refresh, headers in ((rotated_refresh, H), (other_device["refresh_token"], other_device_headers)):
+            r = await c.post("/api/auth/refresh", json={"refresh_token": refresh})
+            check("password change revokes refresh on every device", r.status_code == 401)
+            r = await c.get("/api/auth/me", headers=headers)
+            check("password change revokes bearer access on every device", r.status_code == 401)
+        r = await c.get("/api/auth/me", headers=H2)
+        check("password change preserves sessions for other accounts", r.status_code == 200)
         r = await c.post("/api/auth/login", json={"email": "test@example.com", "password": "newpass123"})
         check("login with new password 200", r.status_code == 200)
+        H = {"Authorization": f"Bearer {r.json()['data']['access_token']}"}
 
         # --- kyc (area chain validated against live Nepal data) ---
         import json as jsonlib2  # noqa: F401
@@ -465,6 +538,12 @@ async def main():
             r = await portal.get("/api/kyc/documents/selfie", params={"user_id": owner_id})
             check("portal cookie can read authorized document", r.status_code == 200
                   and r.headers["Cache-Control"] == "private, no-store")
+            async with Session() as s:
+                await replace_password(s, await s.get(User, admin_id), hash_password("reset1234"))
+            r = await portal.get("/api/auth/admin/me")
+            check("password replacement revokes portal cookie sessions", r.status_code == 401)
+            r = await c.get("/api/auth/me", headers=AH)
+            check("password replacement also revokes bearer sessions", r.status_code == 401)
         r = await c.delete("/api/notifications", headers=H)
         check("clear-all 200", r.status_code == 200)
         r = await c.get("/api/notifications", headers=H)
