@@ -127,9 +127,9 @@ async def get_my_issues(citizen_id: str, page: int, limit: int, db: AsyncSession
     }
 
 
-async def get_issue_by_id(issue_id: str, db: AsyncSession):
+async def get_issue_by_id(issue_id: str, db: AsyncSession, *, for_update: bool = False):
     try:
-        result = await db.execute(
+        statement = (
             select(Issue)
             .where(Issue.id == issue_id, Issue.deleted_at.is_(None))
             .options(
@@ -137,7 +137,9 @@ async def get_issue_by_id(issue_id: str, db: AsyncSession):
                 selectinload(Issue.category),
             )
         )
-        issue = result.scalar_one_or_none()
+        if for_update:
+            statement = statement.with_for_update()
+        issue = await db.scalar(statement)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -159,7 +161,7 @@ async def get_issue_by_id(issue_id: str, db: AsyncSession):
 async def delete_issue(
     issue_id: str, citizen_id: str, delete_reason: str | None, db: AsyncSession
 ):
-    issue_response = await get_issue_by_id(issue_id, db)
+    issue_response = await get_issue_by_id(issue_id, db, for_update=True)
     issue = issue_response["data"]
 
     if issue.citizen_id != citizen_id:
@@ -211,7 +213,7 @@ async def update_issue(
     db: AsyncSession,
     images: list[UploadFile] = [],
 ):
-    issue_response = await get_issue_by_id(issue_id, db)
+    issue_response = await get_issue_by_id(issue_id, db, for_update=True)
     issue = issue_response["data"]
 
     if issue.citizen_id != citizen_id:
