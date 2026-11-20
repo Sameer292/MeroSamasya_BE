@@ -231,6 +231,20 @@ class IssueResponse(BaseModel):
     data: IssueData
 
 
+class IssueStatusUpdate(BaseModel):
+    status: IssueStatusEnum
+    created_at: datetime
+
+
+class IssueDetailData(IssueData):
+    status_updates: list[IssueStatusUpdate]
+
+
+class IssueDetailResponse(BaseModel):
+    message: str
+    data: IssueDetailData
+
+
 class IssueListData(BaseModel):
     total: int
     issues: list[IssueData]

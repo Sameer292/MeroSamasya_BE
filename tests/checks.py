@@ -309,6 +309,11 @@ async def main():
         check("stored photo served 200 without caching", r.status_code == 200
               and r.headers["Cache-Control"] == "no-store")
         iid = issue["id"]
+        detail = (await c.get(f"/api/issues/{iid}", headers=H)).json()["data"]
+        check("new report timeline starts with dated submission",
+              len(detail["status_updates"]) == 1 and detail["status_updates"][0]["status"] == "open"
+              and datetime.fromisoformat(detail["status_updates"][0]["created_at"])
+              == datetime.fromisoformat(issue["created_at"]).replace(tzinfo=UTC))
         issue_photo = issue["media"][0]["url"]
         r = await c.patch(f"/api/issues/{iid}", headers=H, data={"title": issue["title"]})
         check("report with missing optional text can be edited", r.status_code == 200
@@ -494,6 +499,8 @@ async def main():
         check("edit bad category 404", r.status_code == 404)
         r = await c.delete(f"/api/issues/{iid}", headers=H2)
         check("delete non-owner 403", r.status_code == 403)
+        r = await c.patch(f"/api/issues/{iid}", headers=H2, data={"title": "Unauthorized edit"})
+        check("edit non-owner 403", r.status_code == 403)
 
         # --- profile + password (mobile: PATCH /api/auth/me, POST change-password) ---
         for name in ("", "  ", "राम1"):
@@ -678,6 +685,36 @@ async def main():
         r = await c.get(f"/api/admin/issues/{iid}/moderation", headers=AH)
         check("status endpoint writes moderation audit history", r.status_code == 200
               and any(change["field"] == "status" for event in r.json()["data"] for change in event["changes"]))
+        for state in ("in_progress", "resolved", "closed", "open", "in_progress"):
+            r = await c.patch(f"/api/admin/issues/{iid}/status", headers=AH, json={"status": state})
+            check(f"tracking transition to {state}", r.status_code == 200)
+            if state != "open":
+                for method, kwargs in (("patch", {"data": {"title": "Cannot edit now"}}), ("delete", {})):
+                    r = await getattr(c, method)(f"/api/issues/{iid}", headers=H, **kwargs)
+                    check(f"owner cannot {method} a {state} report", r.status_code == 400)
+            else:
+                r = await c.patch(f"/api/issues/{iid}", headers=H, data={"title": edited_title})
+                check("owner can edit a reopened report", r.status_code == 200)
+        detail = (await c.get(f"/api/issues/{iid}", headers=H)).json()["data"]
+        updates = detail["status_updates"]
+        check("citizen tracks submission through closure and reopening without duplicates",
+              [entry["status"] for entry in updates] == ["open", "in_progress", "resolved", "closed", "open", "in_progress"])
+        dates = [datetime.fromisoformat(entry["created_at"]) for entry in updates]
+        check("timeline dates have timezones and chronological order",
+              all(date.tzinfo is not None for date in dates) and dates == sorted(dates))
+        check("citizen timeline excludes internal moderation data",
+              all(set(entry) == {"status", "created_at"} for entry in updates))
+        async with Session() as s:
+            legacy = Issue(id="legacy-missing-photos", citizen_id=owner_id, title="Old report",
+                           status="closed", latitude=27.7, longitude=85.3)
+            s.add(legacy)
+            await s.commit()
+        legacy = (await c.get("/api/issues/legacy-missing-photos", headers=H)).json()["data"]
+        check("legacy report without media or transition history stays readable",
+              legacy["media"] == [] and legacy["status"] == "closed" and len(legacy["status_updates"]) == 1)
+        async with Session() as s:
+            await s.delete(await s.get(Issue, "legacy-missing-photos"))
+            await s.commit()
         r = await c.get("/api/admin/kyc", headers=AH)
         check("admin kyc list 1 pending", r.status_code == 200
               and r.json()["data"]["meta"]["total"] == 1)
