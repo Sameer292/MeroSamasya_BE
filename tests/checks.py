@@ -430,10 +430,30 @@ async def main():
         check("owner notified once across upvote retries",
               sum(n["type"] == "upvote" for n in notifs["notifications"]) == 1)
         check("unread_count > 0", notifs["unread_count"] >= 1)
+        check("report inbox destination uses saved report id", next(
+            n["destination"] for n in notifs["notifications"] if n["type"] == "upvote"
+        ) == {"type": "report", "issue_id": iid})
+        check("welcome message has no destination", next(
+            n["destination"] for n in notifs["notifications"] if n["type"] == "system"
+        ) is None)
         nid = notifs["notifications"][0]["id"]
+        r = await c.patch(f"/api/notifications/{nid}/read", headers=H2)
+        check("another account cannot read the owner's notification", r.status_code == 404)
         r = await c.patch(f"/api/notifications/{nid}/read", headers=H)
         check("mark single read 200", r.status_code == 200 and r.json()["data"]["read"] is True
               and r.json()["data"]["id"] == nid)
+        for notification in notifs["notifications"]:
+            r = await c.patch(f"/api/notifications/{notification['id']}/read", headers=H)
+            check("reading returns the same destination", r.json()["data"]["destination"] == notification["destination"])
+        empty_unread = (await c.get("/api/notifications", headers=H)).json()["data"]
+        check("reading the last unread notification clears the owner's count", empty_unread["unread_count"] == 0)
+        r = await c.patch(f"/api/notifications/{nid}/read", headers=H)
+        check("repeat read keeps unread count at zero", r.status_code == 200 and
+              (await c.get("/api/notifications", headers=H)).json()["data"]["unread_count"] == 0)
+        other_inbox = (await c.get("/api/notifications", headers=H2)).json()["data"]
+        check("another account keeps its own inbox and unread count", other_inbox["unread_count"] == 1
+              and all(n["id"] not in {entry["id"] for entry in notifs["notifications"]}
+                      for n in other_inbox["notifications"]))
         # self-vote creates no notification
         before = (await c.get("/api/notifications", headers=H)).json()["data"]["meta"]["total"]
         await c.post(vote_url, headers=H, json={"upvoted": True})
@@ -722,6 +742,15 @@ async def main():
         r = await c.patch(f"/api/admin/kyc/{sub_id}", headers=AH,
                           json={"status": "approved", "note": "looks good"})
         check("kyc approve 200", r.status_code == 200 and r.json()["data"]["status"] == "approved")
+        kyc_inbox = (await c.get("/api/notifications", headers=H, params={"limit": 100})).json()["data"]
+        kyc_notification = next(n for n in kyc_inbox["notifications"] if n["type"] == "kyc")
+        check("KYC update has a verification destination without a report id",
+              kyc_notification["destination"] == {"type": "kyc"} and kyc_notification["issue_id"] is None)
+        check("KYC destination opens the owner's latest verification status",
+              (await c.get("/api/kyc/me", headers=H)).json()["data"]["status"] == "approved")
+        first_page = (await c.get("/api/notifications", headers=H, params={"limit": 1})).json()["data"]
+        check("inbox unread total is independent of page size", first_page["unread_count"] == kyc_inbox["unread_count"]
+              and len(first_page["notifications"]) == 1)
         r = await c.post("/api/kyc/submit", headers=H, data=kyc_data, files=kyc_files)
         check("resubmit while approved 409", r.status_code == 409)
         r = await c.patch(f"/api/admin/kyc/{sub_id}", headers=AH,
@@ -764,7 +793,7 @@ async def main():
         r = await c.delete("/api/notifications", headers=H)
         check("clear-all 200", r.status_code == 200)
         r = await c.get("/api/notifications", headers=H)
-        check("cleared empty", r.json()["data"]["meta"]["total"] == 0)
+        check("cleared empty", r.json()["data"]["meta"]["total"] == 0 and r.json()["data"]["unread_count"] == 0)
 
         # --- delete closes flow ---
         r = await c.delete(f"/api/issues/{iid}", headers=H, params={"delete_reason": "fixed"})

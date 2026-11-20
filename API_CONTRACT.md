@@ -138,12 +138,21 @@ return `date_of_birth` and `issued_date` as `YYYY-MM-DD`.
 
 | Method | Path | Response |
 |---|---|---|
-| GET | `/api/notifications?page&limit` | `{notifications: [{id, type, title, message, read, created_at, issue_id?}], meta: {total, page, limit}, unread_count}` |
-| PATCH | `/api/notifications/{id}/read` | `{id, read: true}` (owner only, else 404) |
+| GET | `/api/notifications?page&limit` | `{notifications: [{id, type, title, message, read, created_at, issue_id?, destination}], meta: {total, page, limit, total_pages}, unread_count}` |
+| PATCH | `/api/notifications/{id}/read` | Notification with `read: true` and the same `destination` (owner only, else 404; repeated reads are safe) |
 | DELETE | `/api/notifications` | `{message}` (clears own list) |
 
 Generated server-side: welcome on register, upvote on someone else's vote,
 status changes, KYC decisions.
+
+`destination` is `{type: "report", issue_id}` for report notifications,
+`{type: "kyc"}` for verification updates, and `null` for informational messages.
+It is derived from existing notification metadata, including older records;
+no migration is needed. Destinations identify in-app resources, never arbitrary
+URLs. KYC opens the signed-in citizen's current verification status.
+`unread_count` counts all unread messages for the signed-in citizen, across
+every page. Clients reuse this count for Home and refetch it after reads,
+clearing the inbox, and returning to the foreground.
 
 ## Files (`/api/files`, public)
 
