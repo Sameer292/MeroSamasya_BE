@@ -8,8 +8,9 @@ from pydantic import (
     UUID4,
     ValidationInfo,
     field_validator,
+    computed_field,
 )
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 from datetime import date, datetime
 from .enum import AccountStatusEnum, IssueStatusEnum, KycGenderEnum, UserRole
 from .password_policy import validate_password_strength
@@ -311,6 +312,15 @@ class UpvoteResponse(BaseModel):
     data: UpvoteData
 
 
+class NotificationReportDestination(BaseModel):
+    type: Literal["report"] = "report"
+    issue_id: str
+
+
+class NotificationKycDestination(BaseModel):
+    type: Literal["kyc"] = "kyc"
+
+
 class NotificationData(BaseModel):
     id: str
     type: str
@@ -319,6 +329,15 @@ class NotificationData(BaseModel):
     read: bool
     issue_id: Optional[str] = None
     created_at: datetime
+
+    @computed_field
+    @property
+    def destination(self) -> NotificationReportDestination | NotificationKycDestination | None:
+        if self.type == "kyc":
+            return NotificationKycDestination()
+        if self.issue_id:
+            return NotificationReportDestination(issue_id=self.issue_id)
+        return None
 
     class Config:
         from_attributes = True
