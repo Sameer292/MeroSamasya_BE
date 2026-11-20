@@ -56,10 +56,16 @@ created_at, updated_at, resolved_at?}`. New photo URLs are app-relative
 | GET | `/api/issues/all?page&limit` | — | `{meta: {total, page, limit, total_pages}, status_counts, issues}` (page≥1, limit 1–100) |
 | GET | `/api/issues/me?...` | — | same shape, own non-deleted issues |
 | GET | `/api/issues/nearme?...` | — | same shape, issues whose area = caller's area (400 if caller has none) |
-| GET | `/api/issues/{id}` | — | `IssueData` |
+| GET | `/api/issues/{id}` | — | `IssueData` plus `status_updates: [{status, created_at}]` |
 | PATCH | `/api/issues/{id}` | multipart: `category_id?, title?, description?, address?, retained_media_ids?`, new `images?`, and the optional pin triplet (`latitude`, `longitude`, `local_level_id`) | `IssueData`. Only `open` issues, owner only |
 | DELETE | `/api/issues/{id}?delete_reason=` | — | `{id}`. Only `open` issues, owner only |
 | POST | `/api/issues/{id}/upvote` | JSON `{"upvoted": true}` to add or `{"upvoted": false}` to remove | `{upvoted: bool, upvote_count: int}`. A new vote from another account notifies the owner. |
+
+Detail status updates start with `open` at submission, followed by recorded
+status changes in chronological order, including reopening. Dates include a
+timezone. Category changes, reviewer IDs and internal moderation fields are
+excluded. Older changes made before moderation history was recorded cannot
+be reconstructed; the current `status` remains authoritative.
 
 Citizen lists (`all`, `me`, and `nearme`) accept `search` (trimmed, at most
 200 characters), `category_id`, and `status` (`open|in_progress|resolved|closed`).

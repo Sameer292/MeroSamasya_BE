@@ -13,6 +13,7 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.schema import (
     IssueResponse,
+    IssueDetailResponse,
     CitizenIssueQuery,
     IssueCreate,
     DeleteResponse,
@@ -25,7 +26,7 @@ from app.schemas.schema import (
 from app.services.issue_service import (
     create_issue,
     get_my_issues,
-    get_issue_by_id,
+    get_issue_detail,
     delete_issue,
     update_issue,
     get_all_issues,
@@ -105,13 +106,13 @@ async def issues_by_location(
     )
 
 
-@router.get("/{issue_id}", response_model=IssueResponse, status_code=status.HTTP_200_OK)
+@router.get("/{issue_id}", response_model=IssueDetailResponse, status_code=status.HTTP_200_OK)
 async def issue_detail(
     issue_id: str,
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_issue_by_id(issue_id, db, current_user.id)
+    return await get_issue_detail(issue_id, db, current_user.id)
 
 
 @router.delete(

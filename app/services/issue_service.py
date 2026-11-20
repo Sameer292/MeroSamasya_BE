@@ -9,8 +9,11 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.models import Category, Issue, IssueMedia, Upvote
+from app.models.issue_moderation import IssueModerationEvent
 from app.schemas.enum import IssueStatusEnum
-from app.schemas.schema import CitizenIssueQuery, IssueCreate, IssueUpdate
+from app.schemas.schema import (
+    CitizenIssueQuery, IssueCreate, IssueUpdate, IssueData, IssueDetailData,
+)
 from app.services.image_upload import read_image_upload
 from app.services.notification_service import notify
 from app.services.photo_storage import PhotoChanges, change_photos
@@ -165,6 +168,37 @@ async def get_issue_by_id(
     return {
         "message": "Issue fetched successfully",
         "data": issue,
+    }
+
+
+async def get_issue_detail(issue_id: str, db: AsyncSession, current_user_id: str):
+    response = await get_issue_by_id(issue_id, db, current_user_id)
+    issue = response["data"]
+    events = await db.scalars(
+        select(IssueModerationEvent)
+        .where(IssueModerationEvent.issue_id == issue_id)
+        .order_by(IssueModerationEvent.created_at, IssueModerationEvent.id)
+    )
+    # SQLite returns naive UTC timestamps; include the zone for citizen devices.
+    updates = [{
+        "status": IssueStatusEnum.open,
+        "created_at": issue.created_at.replace(tzinfo=issue.created_at.tzinfo or timezone.utc),
+    }]
+    updates.extend(
+        {
+            "status": change["current"],
+            "created_at": event.created_at.replace(tzinfo=event.created_at.tzinfo or timezone.utc),
+        }
+        for event in events
+        for change in event.changes
+        if change["field"] == "status"
+    )
+    return {
+        "message": response["message"],
+        "data": IssueDetailData.model_validate({
+            **IssueData.model_validate(issue).model_dump(),
+            "status_updates": updates,
+        }),
     }
 
 
