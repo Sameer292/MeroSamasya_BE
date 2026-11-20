@@ -257,8 +257,24 @@ class PaginationMeta(BaseModel):
     total_pages: int
 
 
+class CitizenIssueQuery(BaseModel):
+    page: int = Field(1, ge=1)
+    limit: int = Field(10, ge=1, le=100)
+    search: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = (
+        ""
+    )
+    category_id: (
+        Annotated[
+            str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+        ]
+        | None
+    ) = None
+    status: IssueStatusEnum | None = None
+
+
 class PaginatedIssueData(BaseModel):
     meta: PaginationMeta
+    status_counts: dict[IssueStatusEnum, int]
     issues: list[IssueData]
 
 
