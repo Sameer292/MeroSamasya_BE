@@ -466,11 +466,20 @@ async def main():
             check("profile rejects invalid name with a field error", r.status_code == 422
                   and r.json()["detail"][0]["loc"] == ["body", "name"])
         r = await c.patch("/api/auth/me", headers=H, data={
-            "name": "  सीता श्रेष्ठ  ", "phone": "9800000009", "location_id": str(level_id)},
+            "name": "  सीता श्रेष्ठ  ", "phone": "9800000009", "location_id": other_level_id},
             files=[("profile_picture", IMG)])
         check("profile update accepts and trims a Devanagari name", r.status_code == 200
               and r.json()["data"]["name"] == "सीता श्रेष्ठ")
         avatar = r.json()["data"]["profile_picture_url"]
+        r = await c.patch("/api/auth/me", headers=H, files={
+            "name": (None, "सीता शर्मा"), "location_id": (None, level_id)})
+        saved_profile = r.json()["data"]
+        check("profile update returns the saved name and municipality together", r.status_code == 200
+              and saved_profile["name"] == "सीता शर्मा"
+              and saved_profile["location"] == {"id": level_id, "name": home.name})
+        r = await c.get("/api/auth/me", headers=H)
+        check("reopening profile returns the same saved profile", r.status_code == 200
+              and r.json()["data"] == saved_profile)
         r = await c.patch("/api/auth/me", headers=H, files=[("profile_picture", too_large)])
         check("oversized avatar returns a field error and preserves the previous image",
               r.status_code == 400 and r.json()["detail"][0]["loc"] == ["body", "profile_picture"]
