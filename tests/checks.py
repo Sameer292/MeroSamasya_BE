@@ -380,6 +380,8 @@ async def main():
         check("reader can select report municipality", r.status_code == 200)
         r = await c.get("/api/issues/nearme", headers=H2)
         check("report appears in its municipality with a legacy profile ID", [x["id"] for x in r.json()["data"]["issues"]] == [iid])
+        from issue_filter_checks import check_issue_filters
+        await check_issue_filters(c, Session, H, H2, issue, cat_id, new_cat)
         r = await c.post("/api/issues/create", headers=H, data={**report_data, "local_level_id": level_id}, files=files)
         check("create rejects a pin outside its selected municipality", r.status_code == 400)
         r = await c.post("/api/issues/create", headers=H,

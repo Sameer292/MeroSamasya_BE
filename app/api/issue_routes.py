@@ -13,6 +13,7 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.schema import (
     IssueResponse,
+    CitizenIssueQuery,
     IssueCreate,
     DeleteResponse,
     IssueUpdate,
@@ -63,12 +64,11 @@ async def open_issue(
     "/me", response_model=PaginatedIssueResponse, status_code=status.HTTP_200_OK
 )
 async def my_issues(
-    page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
+    query: Annotated[CitizenIssueQuery, Query()],
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_my_issues(current_user.id, page, limit, db)
+    return await get_my_issues(current_user.id, query, db)
 
 
 @router.get(
@@ -83,12 +83,11 @@ async def issue_categories(db: AsyncSession = Depends(get_db)):
     "/all", response_model=PaginatedIssueResponse, status_code=status.HTTP_200_OK
 )
 async def all_issues(
-    page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
+    query: Annotated[CitizenIssueQuery, Query()],
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_all_issues(page, limit, db, current_user.id)
+    return await get_all_issues(query, db, current_user.id)
 
 
 @router.get(
@@ -97,13 +96,12 @@ async def all_issues(
     status_code=status.HTTP_200_OK,
 )
 async def issues_by_location(
-    page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
+    query: Annotated[CitizenIssueQuery, Query()],
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     return await get_issues_by_location(
-        current_user.location_id, page, limit, db, current_user.id
+        current_user.location_id, query, db, current_user.id
     )
 
 
