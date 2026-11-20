@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from logging import getLogger
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -23,24 +24,34 @@ from app.api import (
 )
 from app.core.admin_config import ADMIN_WEB_ORIGIN
 from app.core.database import AsyncSessionLocal, Base, engine
-from app.core.migrations import backfill_report_areas, run_startup_migrations
+from app.core.migrations import (
+    backfill_report_areas,
+    limit_startup_lock_wait,
+    run_startup_migrations,
+)
 from app.services.category_service import ensure_default_categories
 from app.services.kyc_service import import_legacy_kyc_documents
 from app.services.nepal_location_service import ensure_bundled_locations
 from app.services.photo_storage import retire_deleted_report_photos, retry_photo_cleanup
 from app.services.report_area_service import boundaries
 
+logger = getLogger("uvicorn.error")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     boundaries()
+    logger.info("Checking database schema")
     async with engine.begin() as conn:
+        await limit_startup_lock_wait(conn)
         await conn.run_sync(Base.metadata.create_all)
     await run_startup_migrations(engine)
+    logger.info("Checking bundled categories and locations")
     async with AsyncSessionLocal() as session:
         await import_legacy_kyc_documents(session)
         await ensure_default_categories(session)
         await ensure_bundled_locations(session)
+        logger.info("Checking legacy report locations and photos")
         await backfill_report_areas(session)
         await retire_deleted_report_photos(session)
     cleanup_worker = asyncio.create_task(retry_photo_cleanup())
