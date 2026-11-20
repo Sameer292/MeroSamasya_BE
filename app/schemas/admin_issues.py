@@ -39,3 +39,14 @@ class AdminIssuePage(BaseModel):
 class AdminIssueListResponse(BaseModel):
     message: str
     data: AdminIssuePage
+
+
+class AdminIssueStatusTotals(BaseModel):
+    open: int = 0
+    in_progress: int = 0
+    resolved: int = 0
+    closed: int = 0
+
+
+class AdminIssueStatusTotalsResponse(BaseModel):
+    data: AdminIssueStatusTotals

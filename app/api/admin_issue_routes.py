@@ -8,8 +8,13 @@ from app.schemas.admin_issues import (
     AdminIssueListResponse,
     AdminIssueQuery,
     AdminIssueResponse,
+    AdminIssueStatusTotalsResponse,
 )
-from app.services.admin_issue_service import get_admin_issue, list_admin_issues
+from app.services.admin_issue_service import (
+    get_admin_issue,
+    get_issue_status_totals,
+    list_admin_issues,
+)
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 
@@ -20,6 +25,12 @@ async def admin_issues(
 ):
     response.headers.update(NO_STORE)
     return await list_admin_issues(db, query)
+
+
+@router.get("/status-totals", response_model=AdminIssueStatusTotalsResponse)
+async def admin_issue_status_totals(response: Response, db: Database):
+    response.headers.update(NO_STORE)
+    return {"data": await get_issue_status_totals(db)}
 
 
 @router.get("/{issue_id}", response_model=AdminIssueResponse)

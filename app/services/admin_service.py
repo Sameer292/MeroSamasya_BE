@@ -3,9 +3,10 @@ import math
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
-from app.models.models import Issue, User, KycSubmission
+from app.models.models import User, KycSubmission
 from app.schemas.enum import IssueStatusEnum, KycStatusEnum
 from app.schemas.issue_moderation import IssueModerationRequest
+from app.services.admin_issue_service import get_issue_status_totals
 from app.services.issue_moderation_service import moderate_issue
 from app.services.issue_service import get_issue_by_id
 from app.services.kyc_service import serialize_kyc
@@ -21,20 +22,7 @@ async def admin_update_status(
 
 async def admin_overview(db: AsyncSession):
     try:
-        counts = {}
-        for state in IssueStatusEnum:
-            counts[state.value] = (
-                await db.execute(
-                    select(func.count(Issue.id)).where(
-                        Issue.deleted_at.is_(None), Issue.status == state
-                    )
-                )
-            ).scalar() or 0
-        total_issues = (
-            await db.execute(
-                select(func.count(Issue.id)).where(Issue.deleted_at.is_(None))
-            )
-        ).scalar() or 0
+        counts = (await get_issue_status_totals(db)).model_dump()
         total_users = (await db.execute(select(func.count(User.id)))).scalar() or 0
         kyc_pending = (
             await db.execute(
@@ -51,11 +39,8 @@ async def admin_overview(db: AsyncSession):
     return {
         "message": "Overview fetched successfully",
         "data": {
-            "open": counts["open"],
-            "in_progress": counts["in_progress"],
-            "resolved": counts["resolved"],
-            "closed": counts["closed"],
-            "total_issues": total_issues,
+            **counts,
+            "total_issues": sum(counts.values()),
             "total_users": total_users,
             "kyc_pending": kyc_pending,
         },
