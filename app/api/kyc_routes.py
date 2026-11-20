@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Form, File, UploadFile, status, HTTPExce
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.schemas.enum import KycGenderEnum
 from app.schemas.schema import KycResponse
 from app.services.kyc_service import submit_kyc, get_my_kyc, DOC_FIELDS
 from app.models.models import KycSubmission
@@ -22,7 +23,7 @@ router = APIRouter()
 async def submit(
     fullName: str = Form(...),
     citizenshipNumber: str = Form(...),
-    gender: str = Form(...),
+    gender: KycGenderEnum = Form(...),
     dateOfBirth: str = Form(...),
     issuedDate: str = Form(...),
     wardNumber: str = Form(...),

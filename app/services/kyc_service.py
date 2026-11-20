@@ -1,15 +1,18 @@
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status, UploadFile
+
+from app.core.storage import delete_local, save_local
 from app.models.models import KycSubmission
-from app.schemas.enum import KycStatusEnum
-from app.core.storage import save_local, delete_local
+from app.models.nepal_location_models import District, LocalLevel, Province
+from app.schemas.enum import KycGenderEnum, KycStatusEnum
 from app.services.issue_service import ALLOWED_TYPES, MAX_FILE_BYTES, check_file_bytes
 
-ALLOWED_GENDERS = {"male", "female", "other"}
+NEPAL_TIMEZONE = ZoneInfo("Asia/Kathmandu")
 DOC_FIELDS = (
     ("selfie", "selfie_path"),
     ("front", "doc_front_path"),
@@ -47,92 +50,64 @@ def serialize_kyc(sub: KycSubmission) -> dict:
     }
 
 
-def parse_area(raw: str | None, field: str) -> dict:
-    if not raw:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Missing field: {field}",
-        )
+def field_error(field: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=[{"loc": ["body", field], "msg": message, "type": "value_error"}],
+    )
+
+
+def parse_area(raw: str, field: str) -> dict:
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid {field} payload.",
-        )
-    if not isinstance(data, dict) or not data.get("name"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid {field} payload: object with name required.",
-        )
+    except (ValueError, RecursionError):
+        raise field_error(field, f"Select a valid {field}.") from None
+    if not isinstance(data, dict):
+        raise field_error(field, f"Select a valid {field}.")
+    area_id = data.get("id")
+    name = data.get("name")
+    if (
+        type(area_id) is not int
+        or not 0 < area_id <= 2_147_483_647
+        or not isinstance(name, str)
+        or not name.strip()
+    ):
+        raise field_error(field, f"Select a valid {field}.")
     return data
 
 
 async def validate_area_chain(
     db: AsyncSession,
-    province_name: str,
-    district_name: str,
+    province_data: dict,
+    district_data: dict,
     municipality_data: dict,
-) -> str | None:
-    """Bind the claimed area to live Nepal data.
-
-    When the client sends a municipality id (it always does: objects come
-    from this API), the id must exist and its district/province names must
-    match the claimed ones, so callers cannot invent arbitrary areas.
-    Returns the verified local_level id, or None when no id was sent.
-    """
-    from app.models.nepal_location_models import District, LocalLevel, Province
-
-    muni_id = municipality_data.get("id")
-    if muni_id is None:
-        return None
-    try:
-        level_id = int(muni_id)
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid municipality id.",
-        )
+) -> str:
     result = await db.execute(
         select(LocalLevel, District, Province)
         .join(District, LocalLevel.district_id == District.id)
         .join(Province, District.province_id == Province.id)
-        .where(LocalLevel.id == level_id)
+        .where(LocalLevel.id == municipality_data["id"])
     )
     row = result.one_or_none()
     if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Municipality not found.",
-        )
+        raise field_error("municipality", "Select a valid municipality.")
     level, district, province = row
-    if (
-        district.name != district_name
-        or province.name != province_name
-        or level.name != municipality_data["name"]
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Area mismatch: municipality does not belong to the claimed district/province.",
-        )
+    if level.name != municipality_data["name"]:
+        raise field_error("municipality", "Municipality name does not match the selected ID.")
+    if province.id != province_data["id"] or province.name != province_data["name"]:
+        raise field_error("province", "Select the province for this municipality.")
+    if district.id != district_data["id"] or district.name != district_data["name"]:
+        raise field_error("district", "Select the district for this municipality.")
     return str(level.id)
 
 
-def parse_date(raw: str | None, field: str) -> datetime:
-    if not raw:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Missing field: {field}",
-        )
+def parse_calendar_date(raw: str, field: str) -> date:
     try:
-        value = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        value = date.fromisoformat(raw)
     except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid {field}: must be ISO date.",
-        )
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        raise field_error(field, "Enter a valid date in YYYY-MM-DD format.") from None
+    if value.isoformat() != raw:
+        raise field_error(field, "Enter a valid date in YYYY-MM-DD format.")
     return value
 
 
@@ -157,7 +132,7 @@ async def submit_kyc(
     user_id: str,
     full_name: str,
     citizenship_number: str,
-    gender: str,
+    gender: KycGenderEnum,
     date_of_birth: str,
     issued_date: str,
     ward_number: str,
@@ -170,43 +145,30 @@ async def submit_kyc(
     doc_back: UploadFile | None,
     db: AsyncSession,
 ):
-    if not full_name or len(full_name.strip()) < 2:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid full name."
-        )
-    if not citizenship_number or len(citizenship_number.strip()) < 3:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid citizenship number.",
-        )
-    gender = (gender or "").strip().lower()
-    if gender not in ALLOWED_GENDERS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid gender."
-        )
-    dob = parse_date(date_of_birth, "dateOfBirth")
-    issued = parse_date(issued_date, "issuedDate")
-    now = datetime.now(timezone.utc)
-    if dob > now or issued > now:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dates cannot be in the future.",
-        )
+    full_name = full_name.strip()
+    citizenship_number = citizenship_number.strip()
+    if len(full_name) < 2:
+        raise field_error("fullName", "Full name must be at least 2 characters.")
+    if len(citizenship_number) < 3:
+        raise field_error("citizenshipNumber", "Citizenship number must be at least 3 characters.")
+    dob = parse_calendar_date(date_of_birth, "dateOfBirth")
+    issued = parse_calendar_date(issued_date, "issuedDate")
+    today = datetime.now(NEPAL_TIMEZONE).date()
+    if dob > today:
+        raise field_error("dateOfBirth", "Date of birth cannot be in the future.")
+    if issued > today:
+        raise field_error("issuedDate", "Issued date cannot be in the future.")
     if issued < dob:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Issued date cannot be before date of birth.",
-        )
-    if not ward_number or not str(ward_number).strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Ward number required."
-        )
+        raise field_error("issuedDate", "Issued date cannot be before date of birth.")
+    ward_number = ward_number.strip()
+    if not (ward_number.isascii() and ward_number.isdecimal() and ward_number.lstrip("0")):
+        raise field_error("wardNumber", "Enter a positive whole ward number.")
 
     province_data = parse_area(province, "province")
     district_data = parse_area(district, "district")
     municipality_data = parse_area(municipality, "municipality")
     local_level_id = await validate_area_chain(
-        db, province_data["name"], district_data["name"], municipality_data
+        db, province_data, district_data, municipality_data
     )
 
     selfie_bytes = await read_doc_file(selfie, "selfiePhoto")
@@ -243,12 +205,12 @@ async def submit_kyc(
                 existing.doc_front_path,
                 existing.doc_back_path,
             )
-            existing.full_name = full_name.strip()
-            existing.citizenship_number = citizenship_number.strip()
-            existing.gender = gender
+            existing.full_name = full_name
+            existing.citizenship_number = citizenship_number
+            existing.gender = gender.value
             existing.date_of_birth = dob
             existing.issued_date = issued
-            existing.ward_number = str(ward_number).strip()
+            existing.ward_number = ward_number
             existing.tole = tole or None
             existing.province_name = province_data["name"]
             existing.district_name = district_data["name"]
@@ -264,12 +226,12 @@ async def submit_kyc(
         else:
             submission = KycSubmission(
                 user_id=user_id,
-                full_name=full_name.strip(),
-                citizenship_number=citizenship_number.strip(),
-                gender=gender,
+                full_name=full_name,
+                citizenship_number=citizenship_number,
+                gender=gender.value,
                 date_of_birth=dob,
                 issued_date=issued,
-                ward_number=str(ward_number).strip(),
+                ward_number=ward_number,
                 tole=tole or None,
                 province_name=province_data["name"],
                 district_name=district_data["name"],

@@ -1,4 +1,6 @@
-from sqlalchemy import select, text, update
+from datetime import date
+
+from sqlalchemy import inspect, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.models.models import Issue
@@ -14,6 +16,7 @@ async def run_startup_migrations(engine: AsyncEngine):
     2. Issues.local_level_id did not exist on old databases. Add it.
     3. Restore the Categories.deleted_at column on older category databases.
     4. Give refresh-token records a stable session ID.
+    5. Convert legacy KYC timestamps to Nepal calendar dates.
     Safe to run on every boot; each step is guarded/no-op when done.
     """
     backend = engine.url.get_backend_name()
@@ -58,6 +61,27 @@ async def run_startup_migrations(engine: AsyncEngine):
                 text('CREATE UNIQUE INDEX IF NOT EXISTS "ix_RefreshTokens_session_id" '
                      'ON "RefreshTokens" (session_id)')
             )
+        kyc_date_columns = ("date_of_birth", "issued_date")
+        if backend == "postgresql":
+            await conn.execute(text('LOCK TABLE "KycSubmissions" IN ACCESS EXCLUSIVE MODE'))
+            columns = await conn.run_sync(
+                lambda sync_conn: inspect(sync_conn).get_columns("KycSubmissions")
+            )
+            for column in columns:
+                name = column["name"]
+                if name in kyc_date_columns and column["type"].python_type is not date:
+                    await conn.execute(text(
+                        f'ALTER TABLE "KycSubmissions" ALTER COLUMN {name} TYPE DATE '
+                        f"USING ({name} AT TIME ZONE 'Asia/Kathmandu')::date"
+                    ))
+        elif backend == "sqlite":
+            # SQLite stores DATE as ISO text. Recover the local day from legacy UTC times.
+            for name in kyc_date_columns:
+                await conn.execute(text(
+                    f'UPDATE "KycSubmissions" SET {name} = date({name}, '
+                    f"CASE WHEN {name} < '1985-12-31 18:30' THEN '+05:30' ELSE '+05:45' END) "
+                    f"WHERE length({name}) > 10"
+                ))
 
 
 async def backfill_report_areas(db: AsyncSession):
