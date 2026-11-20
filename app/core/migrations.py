@@ -22,6 +22,7 @@ async def run_startup_migrations(engine: AsyncEngine):
     3. Restore the Categories.deleted_at column on older category databases.
     4. Give refresh-token records a stable session ID.
     5. Convert legacy KYC timestamps to Nepal calendar dates.
+    6. Add account-scoped report submission IDs.
     Safe to run on every boot; each step is guarded/no-op when done.
     """
     backend = engine.url.get_backend_name()
@@ -38,6 +39,9 @@ async def run_startup_migrations(engine: AsyncEngine):
                 text('ALTER TABLE "Issues" ADD COLUMN IF NOT EXISTS local_level_id VARCHAR')
             )
             await conn.execute(
+                text('ALTER TABLE "Issues" ADD COLUMN IF NOT EXISTS submission_id VARCHAR(36)')
+            )
+            await conn.execute(
                 text('ALTER TABLE "Categories" ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP')
             )
             await conn.execute(
@@ -52,6 +56,10 @@ async def run_startup_migrations(engine: AsyncEngine):
                 await conn.execute(
                     text('ALTER TABLE "Issues" ADD COLUMN local_level_id VARCHAR')
                 )
+            if "submission_id" not in cols:
+                await conn.execute(
+                    text('ALTER TABLE "Issues" ADD COLUMN submission_id VARCHAR(36)')
+                )
             category_cols = await conn.execute(text('PRAGMA table_info("Categories")'))
             if "deleted_at" not in [row[1] for row in category_cols]:
                 await conn.execute(
@@ -63,6 +71,10 @@ async def run_startup_migrations(engine: AsyncEngine):
                     text('ALTER TABLE "RefreshTokens" ADD COLUMN session_id VARCHAR(64)')
                 )
         if backend in ("postgresql", "sqlite"):
+            await conn.execute(
+                text('CREATE UNIQUE INDEX IF NOT EXISTS ix_issues_citizen_submission '
+                     'ON "Issues" (citizen_id, submission_id)')
+            )
             await conn.execute(
                 text('CREATE UNIQUE INDEX IF NOT EXISTS "ix_RefreshTokens_session_id" '
                      'ON "RefreshTokens" (session_id)')

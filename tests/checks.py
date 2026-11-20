@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 
 TMP = tempfile.mkdtemp(prefix="merosamasya-checks-")
 os.environ["LOCAL_STORAGE_DIR"] = os.path.join(TMP, "storage")
@@ -73,6 +74,9 @@ async def main():
     engine = create_async_engine(f"sqlite+aiosqlite:///{DB_PATH}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("DROP INDEX ix_issues_citizen_submission"))
+        await conn.execute(text('ALTER TABLE "Issues" DROP COLUMN submission_id'))
+    await run_startup_migrations(engine)
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     _, area_names, _ = boundaries()
@@ -264,6 +268,7 @@ async def main():
         check("page=0 -> 422", r.status_code == 422)
         files = [("images", IMG)]
         report_data = {
+            "submission_id": str(uuid4()),
             "category_id": cat_id, "title": "  Pothole on Main Road's <detour> & lane  \t",
             "latitude": "27.710", "longitude": "85.324",
             "local_level_id": report_level_id,
@@ -277,9 +282,26 @@ async def main():
         r = await c.get("/api/location/report-areas", params={**pin, "latitude": "120"})
         check("area lookup rejects out-of-range latitude with a field error", r.status_code == 422
               and r.json()["detail"][0]["loc"] == ["query", "latitude"])
-        r = await c.post("/api/issues/create", headers=H, data=report_data, files=files)
+        for invalid_submission in ("", "invalid"):
+            r = await c.post("/api/issues/create", headers=H,
+                             data={**report_data, "submission_id": invalid_submission}, files=files)
+            check("create requires a valid submission ID", r.status_code == 422
+                  and r.json()["detail"][0]["loc"] == ["body", "submission_id"])
+        r, concurrent = await asyncio.gather(*(
+            c.post("/api/issues/create", headers=H, data=report_data, files=files)
+            for _ in range(2)
+        ))
         check("create without desc/addr 201", r.status_code == 201)
         issue = r.json()["data"]
+        retry = await c.post("/api/issues/create", headers=H, data=report_data, files=files)
+        check("concurrent and lost-response retries return the original report and photo",
+              all(reply.status_code == 201 and reply.json()["data"] == issue
+                  for reply in (concurrent, retry)))
+        mine = (await c.get("/api/issues/me", headers=H)).json()["data"]
+        check("report retries create one report and one stored image", mine["meta"]["total"] == 1
+              and len(list((Path(os.environ["LOCAL_STORAGE_DIR"]) / "issues").iterdir())) == 1)
+        original_submission = report_data["submission_id"]
+        report_data["submission_id"] = str(uuid4())
         check("create trims title and preserves plain text", issue["title"] == report_data["title"].strip())
         check("explicit report area differs from residence", issue["local_level_id"] == str(report_level_id))
         check("local media url", issue["media"][0]["url"].startswith("/api/files/issues/"))
@@ -383,13 +405,23 @@ async def main():
         r = await c.patch("/api/location/location", json={"location_id": level_id}, headers=H2)
         r = await c.get("/api/issues/nearme", headers=H2)
         check("moved report appears in its new municipal feed", [x["id"] for x in r.json()["data"]["issues"]] == [iid])
-        r = await c.post(f"/api/issues/{iid}/upvote", headers=H2)
-        body = r.json()
-        check("upvote 200 count 1", r.status_code == 200 and body["data"]["upvote_count"] == 1
-              and body["data"]["upvoted"] is True)
+        vote_url = f"/api/issues/{iid}/upvote"
+        r = await c.post(vote_url, headers=H2)
+        check("upvote requires explicit state", r.status_code == 422)
+        r = await c.post(vote_url, headers=H2, json={"upvoted": "true"})
+        check("upvote requires a JSON boolean", r.status_code == 422)
+        adds = await asyncio.gather(*(
+            c.post(vote_url, headers=H2, json={"upvoted": True}) for _ in range(2)
+        ))
+        adds.append(await c.post(vote_url, headers=H2, json={"upvoted": True}))
+        check("upvote retries leave one vote", all(
+            r.status_code == 200 and r.json()["data"] == {"upvoted": True, "upvote_count": 1}
+            for r in adds
+        ))
         r = await c.get("/api/notifications", headers=H)
         notifs = r.json()["data"]
-        check("owner notified of upvote", any(n["type"] == "upvote" for n in notifs["notifications"]))
+        check("owner notified once across upvote retries",
+              sum(n["type"] == "upvote" for n in notifs["notifications"]) == 1)
         check("unread_count > 0", notifs["unread_count"] >= 1)
         nid = notifs["notifications"][0]["id"]
         r = await c.patch(f"/api/notifications/{nid}/read", headers=H)
@@ -397,13 +429,14 @@ async def main():
               and r.json()["data"]["id"] == nid)
         # self-vote creates no notification
         before = (await c.get("/api/notifications", headers=H)).json()["data"]["meta"]["total"]
-        await c.post(f"/api/issues/{iid}/upvote", headers=H)
+        await c.post(vote_url, headers=H, json={"upvoted": True})
         after = (await c.get("/api/notifications", headers=H)).json()["data"]["meta"]["total"]
         check("self-vote silent", after == before)
-        await c.post(f"/api/issues/{iid}/upvote", headers=H)  # unvote self
-        r = await c.post(f"/api/issues/{iid}/upvote", headers=H2)  # unvote voter2
-        check("unvote count 0", r.json()["data"]["upvote_count"] == 0
-              and r.json()["data"]["upvoted"] is False)
+        await c.post(vote_url, headers=H, json={"upvoted": False})
+        for _ in range(2):
+            r = await c.post(vote_url, headers=H2, json={"upvoted": False})
+            check("unvote retries leave zero votes",
+                  r.status_code == 200 and r.json()["data"] == {"upvoted": False, "upvote_count": 0})
 
         # --- edit media retain ---
         import json as jsonlib
@@ -697,7 +730,12 @@ async def main():
         # --- delete closes flow ---
         r = await c.delete(f"/api/issues/{iid}", headers=H, params={"delete_reason": "fixed"})
         check("delete non-open issue 400", r.status_code == 400)
-        r = await c.post("/api/issues/create", headers=H, data={**report_data, "title": "Disposable open issue"}, files=files)
+        other_report = await c.post("/api/issues/create", headers=H2,
+                                    data={**report_data, "submission_id": original_submission}, files=files)
+        check("a submission ID is scoped to the signed-in account",
+              other_report.status_code == 201 and other_report.json()["data"]["id"] != iid)
+        disposable = {**report_data, "submission_id": str(uuid4()), "title": "Disposable open issue"}
+        r = await c.post("/api/issues/create", headers=H, data=disposable, files=files)
         iid2 = r.json()["data"]["id"]
         deleted_photo = r.json()["data"]["media"][0]["url"]
         r = await c.delete(f"/api/issues/{iid2}", headers=H, params={"delete_reason": "fixed"})
@@ -706,6 +744,9 @@ async def main():
         check("deleted detail 404", r.status_code == 404)
         check("deleted report photo 404", (await c.get(deleted_photo)).status_code == 404)
         check("deleted report photo removed from disk", not (storage / Path(deleted_photo).name).exists())
+        retry = await c.post("/api/issues/create", headers=H, data=disposable, files=files)
+        check("a retry does not recreate a deleted report", retry.json()["data"]["id"] == iid2
+              and (await c.get(f"/api/issues/{iid2}", headers=H)).status_code == 404)
 
         async with Session() as s:
             user = await s.get(User, owner_id)

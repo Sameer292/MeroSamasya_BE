@@ -18,6 +18,7 @@ from app.schemas.schema import (
     IssueUpdate,
     PaginatedIssueResponse,
     CategoryListResponse,
+    UpvoteRequest,
     UpvoteResponse,
 )
 from app.services.issue_service import (
@@ -28,7 +29,7 @@ from app.services.issue_service import (
     update_issue,
     get_all_issues,
     get_issues_by_location,
-    toggle_vote,
+    set_vote,
 )
 from app.services.category_service import get_categories
 from app.core.database import get_db
@@ -170,7 +171,8 @@ async def edit_issue(
 )
 async def upvote_issue(
     issue_id: str,
+    request: UpvoteRequest,
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await toggle_vote(issue_id, current_user.id, db)
+    return await set_vote(issue_id, current_user.id, request.upvoted, db)
