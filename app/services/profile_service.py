@@ -4,11 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import User
 from app.schemas.schema import UpdateProfileRequest
-from app.services.issue_service import (
-    ALLOWED_TYPES,
-    MAX_FILE_BYTES,
-    check_file_bytes,
-)
+from app.services.image_upload import read_image_upload
 from app.services.location_service import (
     get_level_or_404,
     serialize_user,
@@ -30,16 +26,7 @@ async def update_profile(
     else:
         location_id = None
 
-    file_bytes = None
-    if profile_picture is not None:
-        if profile_picture.content_type not in ALLOWED_TYPES:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid file type: {profile_picture.content_type}.",
-            )
-        # ponytail: bounded read, a huge upload never fully lands in memory
-        file_bytes = await profile_picture.read(MAX_FILE_BYTES + 1)
-        check_file_bytes(file_bytes)
+    avatar = await read_image_upload(profile_picture, "profile_picture") if profile_picture else None
 
     values = {}
     if data.name is not None:
@@ -51,10 +38,9 @@ async def update_profile(
     try:
         async with change_photos(db) as photos:
             previous_avatar = None
-            if profile_picture is not None and file_bytes is not None:
-                values["profile_picture_url"] = await photos.upload(
-                    file_bytes, "profiles", profile_picture.content_type
-                )
+            if avatar is not None:
+                data_bytes, content_type = avatar
+                values["profile_picture_url"] = await photos.upload(data_bytes, "profiles", content_type)
                 if db.get_bind().dialect.name == "sqlite":
                     await db.execute(update(User.__table__).where(User.id == user_id)
                                      .values(updated_at=User.updated_at))

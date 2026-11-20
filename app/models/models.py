@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, Enum, Float, ForeignKey, String, Text, UniqueConstraint,
-    cast, func, select,
+    Boolean, Column, Date, DateTime, DDL, Enum, Float, ForeignKey, LargeBinary, String, Text,
+    UniqueConstraint, cast, event, func, select,
 )
 from sqlalchemy.orm import column_property, foreign, relationship
 from app.core.database import Base
@@ -172,10 +172,10 @@ class KycSubmission(Base):
     district_name = Column(String, nullable=False)
     municipality_name = Column(String, nullable=False)
     local_level_id = Column(String, nullable=True)
-    # ponytail: local file names only, served authorized, never public URLs
-    selfie_path = Column(Text, nullable=False)
-    doc_front_path = Column(Text, nullable=False)
-    doc_back_path = Column(Text, nullable=False)
+    # Legacy filenames used to import files from the previous API host.
+    selfie_path = Column(Text, nullable=False, default="")
+    doc_front_path = Column(Text, nullable=False, default="")
+    doc_back_path = Column(Text, nullable=False, default="")
     status = Column(
         Enum(KycStatusEnum, name="kyc_status_enum", create_type=False),
         nullable=False,
@@ -186,3 +186,22 @@ class KycSubmission(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     user = relationship("User")
+
+
+class KycDocument(Base):
+    __tablename__ = "KycDocuments"
+
+    submission_id = Column(
+        String, ForeignKey("KycSubmissions.id", ondelete="CASCADE"), primary_key=True
+    )
+    kind = Column(String, primary_key=True)
+    content_type = Column(String, nullable=False)
+    data = Column(LargeBinary, nullable=False)
+
+
+# Hosted PostgreSQL can grant public API roles access to new tables by default.
+event.listen(
+    KycDocument.__table__,
+    "after_create",
+    DDL("ALTER TABLE %(fullname)s ENABLE ROW LEVEL SECURITY").execute_if(dialect="postgresql"),
+)

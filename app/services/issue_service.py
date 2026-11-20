@@ -11,13 +11,12 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.models.models import Category, Issue, IssueMedia, Upvote
 from app.schemas.enum import IssueStatusEnum
 from app.schemas.schema import IssueCreate, IssueUpdate
+from app.services.image_upload import read_image_upload
 from app.services.notification_service import notify
 from app.services.photo_storage import PhotoChanges, change_photos
 from app.services.report_area_service import report_feed_area_ids, validate_report_area
 
 MAX_IMAGES = 3
-MAX_FILE_BYTES = 5 * 1024 * 1024
-ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
 
 
 def validate_image_files(images: list[UploadFile]):
@@ -26,32 +25,13 @@ def validate_image_files(images: list[UploadFile]):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"You can upload a maximum of {MAX_IMAGES} images.",
         )
-    for image in images:
-        if image.content_type not in ALLOWED_TYPES:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid file type: {image.content_type}. Allowed: jpeg, jpg, png, webp.",
-            )
-
-
-def check_file_bytes(file_bytes: bytes):
-    if not file_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Empty image file."
-        )
-    if len(file_bytes) > MAX_FILE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Image too large. Maximum size is 5MB per image.",
-        )
 
 
 async def upload_issue_photos(photos: PhotoChanges, images: list[UploadFile]) -> list[str]:
     urls = []
-    for image in images:
-        file_bytes = await image.read(MAX_FILE_BYTES + 1)
-        check_file_bytes(file_bytes)
-        urls.append(await photos.upload(file_bytes, "issues", image.content_type))
+    for index, image in enumerate(images):
+        data, content_type = await read_image_upload(image, "images", index)
+        urls.append(await photos.upload(data, "issues", content_type))
     return urls
 
 

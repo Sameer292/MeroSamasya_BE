@@ -6,8 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv(".env")
 
-# Local disk fallback used when Cloudinary is not configured, and always for
-# private KYC identity documents (never served from public URLs).
+# Local photo fallback and the source for importing legacy KYC documents.
 STORAGE_DIR = Path(os.getenv("LOCAL_STORAGE_DIR", "./storage"))
 
 EXT_BY_CONTENT_TYPE = {

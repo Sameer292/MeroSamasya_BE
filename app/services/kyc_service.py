@@ -1,31 +1,28 @@
 import json
+import logging
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+from anyio import to_thread
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import delete, exists, select, update
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.storage import delete_local, save_local
-from app.models.models import KycSubmission
+from app.core.storage import delete_local, local_path
+from app.models.models import KycDocument, KycSubmission, User
 from app.models.nepal_location_models import District, LocalLevel, Province
 from app.schemas.enum import KycGenderEnum, KycStatusEnum
-from app.services.issue_service import ALLOWED_TYPES, MAX_FILE_BYTES, check_file_bytes
+from app.services.image_upload import read_image_file, read_image_upload
 
 NEPAL_TIMEZONE = ZoneInfo("Asia/Kathmandu")
-DOC_FIELDS = (
-    ("selfie", "selfie_path"),
-    ("front", "doc_front_path"),
-    ("back", "doc_back_path"),
-)
+DOC_FIELDS = {"selfie": "selfie_path", "front": "doc_front_path", "back": "doc_back_path"}
+logger = logging.getLogger(__name__)
 
 
 def document_links() -> dict:
-    return {
-        "selfie": "/api/kyc/documents/selfie",
-        "front": "/api/kyc/documents/front",
-        "back": "/api/kyc/documents/back",
-    }
+    return {kind: f"/api/kyc/documents/{kind}" for kind in DOC_FIELDS}
 
 
 def serialize_kyc(sub: KycSubmission) -> dict:
@@ -111,21 +108,35 @@ def parse_calendar_date(raw: str, field: str) -> date:
     return value
 
 
-async def read_doc_file(upload: UploadFile | None, field: str) -> bytes:
-    if upload is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Missing file: {field}",
+def read_legacy_document(name: str) -> tuple[bytes, str]:
+    with local_path("kyc", name).open("rb") as file:
+        return read_image_file(file)
+
+
+async def import_legacy_kyc_documents(db: AsyncSession):
+    insert = sqlite_insert if db.get_bind().dialect.name == "sqlite" else postgres_insert
+    for kind, field in DOC_FIELDS.items():
+        path = getattr(KycSubmission, field)
+        documents = await db.execute(
+            select(KycSubmission.id, path).where(
+                path != "",
+                ~exists().where(
+                    KycDocument.submission_id == KycSubmission.id, KycDocument.kind == kind
+                ),
+            ).order_by(KycSubmission.id)
         )
-    if upload.content_type not in ALLOWED_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type for {field}: {upload.content_type}.",
-        )
-    # ponytail: bounded read, a huge upload never fully lands in memory
-    file_bytes = await upload.read(MAX_FILE_BYTES + 1)
-    check_file_bytes(file_bytes)
-    return file_bytes
+        for submission_id, name in documents:
+            try:
+                data, content_type = await to_thread.run_sync(read_legacy_document, name)
+            except (OSError, ValueError):
+                logger.warning("Could not import KYC %s document for submission %s", kind, submission_id)
+                continue
+            await db.execute(
+                insert(KycDocument).values(
+                    submission_id=submission_id, kind=kind, content_type=content_type, data=data
+                ).on_conflict_do_nothing(index_elements=[KycDocument.submission_id, KycDocument.kind])
+            )
+        await db.commit()
 
 
 async def submit_kyc(
@@ -171,22 +182,38 @@ async def submit_kyc(
         db, province_data, district_data, municipality_data
     )
 
-    selfie_bytes = await read_doc_file(selfie, "selfiePhoto")
-    front_bytes = await read_doc_file(doc_front, "documentFrontPhoto")
-    back_bytes = await read_doc_file(doc_back, "documentBackPhoto")
-
-    # ponytail: identity docs stay on local disk, never public URLs
-    selfie_name = save_local(selfie_bytes, "kyc", selfie.content_type)
-    front_name = save_local(front_bytes, "kyc", doc_front.content_type)
-    back_name = save_local(back_bytes, "kyc", doc_back.content_type)
-    new_files = (selfie_name, front_name, back_name)
+    documents = {
+        "selfie": await read_image_upload(selfie, "selfiePhoto"),
+        "front": await read_image_upload(doc_front, "documentFrontPhoto"),
+        "back": await read_image_upload(doc_back, "documentBackPhoto"),
+    }
+    values = {
+        "full_name": full_name,
+        "citizenship_number": citizenship_number,
+        "gender": gender.value,
+        "date_of_birth": dob,
+        "issued_date": issued,
+        "ward_number": ward_number,
+        "tole": tole or None,
+        "province_name": province_data["name"],
+        "district_name": district_data["name"],
+        "municipality_name": municipality_data["name"],
+        "local_level_id": local_level_id,
+        "status": KycStatusEnum.pending,
+        "reviewer_note": None,
+    }
 
     try:
-        result = await db.execute(
-            select(KycSubmission).where(KycSubmission.user_id == user_id)
+        # Serialize submissions for the same user, including their first submission.
+        if db.get_bind().dialect.name == "sqlite":
+            await db.execute(update(User.__table__).where(User.id == user_id)
+                             .values(updated_at=User.updated_at))
+        else:
+            await db.execute(select(User.id).where(User.id == user_id).with_for_update(key_share=True))
+        submission = await db.scalar(
+            select(KycSubmission).where(KycSubmission.user_id == user_id).with_for_update(key_share=True)
         )
-        existing = result.scalar_one_or_none()
-        if existing is not None and existing.status in (
+        if submission is not None and submission.status in (
             KycStatusEnum.pending,
             KycStatusEnum.approved,
         ):
@@ -194,78 +221,46 @@ async def submit_kyc(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     "KYC already under review."
-                    if existing.status == KycStatusEnum.pending
+                    if submission.status == KycStatusEnum.pending
                     else "KYC already verified."
                 ),
             )
-        old_files: tuple | None = None
-        if existing:
-            old_files = (
-                existing.selfie_path,
-                existing.doc_front_path,
-                existing.doc_back_path,
+        old_files = ()
+        if submission is not None:
+            old_files = tuple(getattr(submission, field) for field in DOC_FIELDS.values())
+            for field in DOC_FIELDS.values():
+                setattr(submission, field, "")
+            for field, value in values.items():
+                setattr(submission, field, value)
+            await db.execute(
+                delete(KycDocument).where(KycDocument.submission_id == submission.id)
             )
-            existing.full_name = full_name
-            existing.citizenship_number = citizenship_number
-            existing.gender = gender.value
-            existing.date_of_birth = dob
-            existing.issued_date = issued
-            existing.ward_number = ward_number
-            existing.tole = tole or None
-            existing.province_name = province_data["name"]
-            existing.district_name = district_data["name"]
-            existing.municipality_name = municipality_data["name"]
-            existing.local_level_id = local_level_id
-            existing.selfie_path = selfie_name
-            existing.doc_front_path = front_name
-            existing.doc_back_path = back_name
-            existing.status = KycStatusEnum.pending
-            existing.reviewer_note = None
-            submission = existing
             message = "KYC resubmitted successfully"
         else:
-            submission = KycSubmission(
-                user_id=user_id,
-                full_name=full_name,
-                citizenship_number=citizenship_number,
-                gender=gender.value,
-                date_of_birth=dob,
-                issued_date=issued,
-                ward_number=ward_number,
-                tole=tole or None,
-                province_name=province_data["name"],
-                district_name=district_data["name"],
-                municipality_name=municipality_data["name"],
-                local_level_id=local_level_id,
-                selfie_path=selfie_name,
-                doc_front_path=front_name,
-                doc_back_path=back_name,
-                status=KycStatusEnum.pending,
-            )
+            submission = KycSubmission(user_id=user_id, **values)
             db.add(submission)
             message = "KYC submitted successfully"
-        await db.commit()
+        await db.flush()
+        db.add_all([
+            KycDocument(submission_id=submission.id, kind=kind, data=data, content_type=content_type)
+            for kind, (data, content_type) in documents.items()
+        ])
         await db.refresh(submission)
+        response = {"message": message, "data": serialize_kyc(submission)}
+        await db.commit()
     except HTTPException:
         await db.rollback()
-        for name in new_files:
-            delete_local("kyc", name)
         raise
     except Exception:
         await db.rollback()
-        for name in new_files:
-            delete_local("kyc", name)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to submit KYC. Please try again.",
         )
 
-    # ponytail: old docs deleted only after the new paths committed
-    if old_files:
-        for name in old_files:
-            delete_local("kyc", name)
-
-    return {"message": message, "data": serialize_kyc(submission)}
+    for name in old_files:
+        delete_local("kyc", name)
+    return response
 
 
 async def get_my_kyc(user_id: str, db: AsyncSession):

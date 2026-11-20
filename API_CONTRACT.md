@@ -5,6 +5,11 @@ Base URL (local): `http://<host>:8000`. Authenticated requests send
 admin or superadmin with a bearer access token or the portal session cookie.
 Cookie-authenticated admin writes require the configured portal origin.
 
+Report photos, profile avatars, and KYC documents accept still JPEG, PNG,
+and WebP files up to 5 MiB, 8192 pixels on either side, and 24 megapixels.
+The API verifies the image bytes and uses the detected format. Invalid images
+return a 400 with a field error. Report photo errors include the upload index.
+
 ## Auth (`/api/auth`)
 
 | Method | Path | Auth | Body | Response `data` |
@@ -95,7 +100,7 @@ legacy behavior (new files replace all; no files touches nothing). Explicit
 |---|---|---|---|
 | POST | `/api/kyc/submit` | multipart: `fullName`, `citizenshipNumber`, `gender` (`male`, `female`, `other`), `dateOfBirth`, `issuedDate` (both `YYYY-MM-DD`), `wardNumber` (positive whole number), `tole` (optional), `province`, `district`, `municipality` (JSON objects with integer `id` and `name` from the Nepal API), files `selfiePhoto`, `documentFrontPhoto`, `documentBackPhoto` (images, ≤5 MB) | 201 with pending status. Resubmission returns 409 while pending or approved and is allowed after rejection. |
 | GET | `/api/kyc/me` | — | own submission + status; `documents: {selfie, front, back}` link paths, never file paths |
-| GET | `/api/kyc/documents/{selfie\|front\|back}[?user_id=]` | — | Private file bytes. Citizens can read their own documents. Admins can read a submission for the specified user. |
+| GET | `/api/kyc/documents/{selfie\|front\|back}[?user_id=]` | — | Private image bytes from the database, with the verified media type and `Cache-Control: private, no-store`. Citizens can read their own documents. Admins can read a submission for the specified user. |
 
 Identity documents are stored on local disk only and never exposed as public
 URLs. On resubmission, new files commit first and old files are deleted only

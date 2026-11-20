@@ -25,6 +25,7 @@ from app.core.admin_config import ADMIN_WEB_ORIGIN
 from app.core.database import AsyncSessionLocal, Base, engine
 from app.core.migrations import backfill_report_areas, run_startup_migrations
 from app.services.category_service import ensure_default_categories
+from app.services.kyc_service import import_legacy_kyc_documents
 from app.services.nepal_location_service import ensure_bundled_locations
 from app.services.photo_storage import retire_deleted_report_photos, retry_photo_cleanup
 from app.services.report_area_service import boundaries
@@ -37,6 +38,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     await run_startup_migrations(engine)
     async with AsyncSessionLocal() as session:
+        await import_legacy_kyc_documents(session)
         await ensure_default_categories(session)
         await ensure_bundled_locations(session)
         await backfill_report_areas(session)
