@@ -52,14 +52,20 @@ created_at, updated_at, resolved_at?}`. New photo URLs are app-relative
 
 | Method | Path | Body | Response `data` |
 |---|---|---|---|
-| POST | `/api/issues/create` | multipart: `category_id, title (3-200), description?, latitude, longitude, address?, local_level_id` + 1–3 `images` (jpeg/png/webp, ≤5 MB each) | `IssueData` (201) |
+| POST | `/api/issues/create` | multipart: `submission_id` (UUID v4), `category_id, title (3-200), description?, latitude, longitude, address?, local_level_id` + 1–3 `images` (jpeg/png/webp, ≤5 MB each) | `IssueData` (201) |
 | GET | `/api/issues/all?page&limit` | — | `{meta: {total, page, limit, total_pages}, issues}` (page≥1, limit 1–100) |
 | GET | `/api/issues/me?...` | — | same shape, own non-deleted issues |
 | GET | `/api/issues/nearme?...` | — | same shape, issues whose area = caller's area (400 if caller has none) |
 | GET | `/api/issues/{id}` | — | `IssueData` |
 | PATCH | `/api/issues/{id}` | multipart: `category_id?, title?, description?, address?, retained_media_ids?`, new `images?`, and the optional pin triplet (`latitude`, `longitude`, `local_level_id`) | `IssueData`. Only `open` issues, owner only |
 | DELETE | `/api/issues/{id}?delete_reason=` | — | `{id}`. Only `open` issues, owner only |
-| POST | `/api/issues/{id}/upvote` | — | `{upvoted: bool, upvote_count: int}` (toggle; owner gets a notification except on self-votes) |
+| POST | `/api/issues/{id}/upvote` | JSON `{"upvoted": true}` to add or `{"upvoted": false}` to remove | `{upvoted: bool, upvote_count: int}`. A new vote from another account notifies the owner. |
+
+Generate a submission ID once per draft and reuse it on retries. For the
+same authenticated account and submission ID, the first successful create
+sets the report's contents. Retrying returns the original report ID with 201,
+including after deletion. Repeating either upvote state leaves the vote
+unchanged and adds no notification.
 
 Create requests require a confirmed municipality ID. Pin edits send both
 coordinates and the municipality ID together. The API checks that the pin is

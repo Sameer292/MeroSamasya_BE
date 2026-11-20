@@ -3,7 +3,9 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    StrictBool,
     StringConstraints,
+    UUID4,
     ValidationInfo,
     field_validator,
 )
@@ -177,6 +179,7 @@ class IssueText(BaseModel):
 
 
 class IssueCreate(IssueText):
+    submission_id: UUID4
     category_id: RequiredId
     title: IssueTitle
     latitude: Latitude
@@ -262,6 +265,10 @@ class PaginatedIssueData(BaseModel):
 class PaginatedIssueResponse(BaseModel):
     message: str
     data: PaginatedIssueData
+
+
+class UpvoteRequest(BaseModel):
+    upvoted: StrictBool
 
 
 class UpvoteData(BaseModel):

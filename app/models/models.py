@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, DDL, Enum, Float, ForeignKey, LargeBinary, String, Text,
+    Boolean, Column, Date, DateTime, DDL, Enum, Float, ForeignKey, Index, LargeBinary, String, Text,
     UniqueConstraint, cast, event, func, select,
 )
 from sqlalchemy.orm import column_property, foreign, relationship
@@ -68,11 +68,15 @@ class User(Base):
 
 class Issue(Base):
     __tablename__ = "Issues"
+    __table_args__ = (
+        Index("ix_issues_citizen_submission", "citizen_id", "submission_id", unique=True),
+    )
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     citizen_id = Column(
         String, ForeignKey("Users.id", ondelete="SET NULL"), nullable=True
     )
+    submission_id = Column(String(36), nullable=True)
     category_id = Column(
         String, ForeignKey("Categories.id", ondelete="SET NULL"), nullable=True
     )

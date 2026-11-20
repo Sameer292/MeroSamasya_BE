@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -50,54 +50,59 @@ async def create_issue(
     data: IssueCreate,
     citizen_id: str,
     db: AsyncSession,
-    images: list[UploadFile] = [],
+    images: list[UploadFile],
 ):
-    category = await db.execute(
-        select(Category).where(Category.id == data.category_id, Category.deleted_at.is_(None))
+    submission_id = str(data.submission_id)
+    submission = (
+        select(Issue)
+        .where(Issue.citizen_id == citizen_id, Issue.submission_id == submission_id)
+        .options(
+            selectinload(Issue.media),
+            selectinload(Issue.category),
+            selectinload(Issue.upvotes),
+        )
+        .execution_options(populate_existing=True)
     )
-    if not category.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Category not found.",
-        )
-
-    if len(images) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Please upload at least 1 image.",
-        )
-
-    validate_image_files(images)
 
     try:
-        async with change_photos(db) as photos:
-            local_level_id = await validate_report_area(
-                db, data.local_level_id, data.latitude, data.longitude
+        issue = await db.scalar(submission)
+        if issue is None:
+            category = await db.scalar(
+                select(Category).where(Category.id == data.category_id, Category.deleted_at.is_(None))
             )
-            urls = await upload_issue_photos(photos, images)
-            issue = Issue(
-                citizen_id=citizen_id,
-                category_id=data.category_id,
-                title=data.title,
-                description=data.description,
-                latitude=data.latitude,
-                longitude=data.longitude,
-                address=data.address,
-                local_level_id=local_level_id,
-                media=[IssueMedia(url=url) for url in urls],
-            )
-            db.add(issue)
+            if category is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found.")
+            if not images:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Please upload at least 1 image."
+                )
+            validate_image_files(images)
 
-        result = await db.execute(
-            select(Issue)
-            .where(Issue.id == issue.id)
-            .options(
-                selectinload(Issue.media),
-                selectinload(Issue.category),
-                selectinload(Issue.upvotes),
-            )
-        )
-        issue = result.scalar_one()
+            try:
+                async with change_photos(db) as photos:
+                    local_level_id = await validate_report_area(
+                        db, data.local_level_id, data.latitude, data.longitude
+                    )
+                    urls = await upload_issue_photos(photos, images)
+                    db.add(Issue(
+                        citizen_id=citizen_id,
+                        submission_id=submission_id,
+                        category_id=data.category_id,
+                        title=data.title,
+                        description=data.description,
+                        latitude=data.latitude,
+                        longitude=data.longitude,
+                        address=data.address,
+                        local_level_id=local_level_id,
+                        media=[IssueMedia(url=url) for url in urls],
+                    ))
+            except IntegrityError:
+                # change_photos rolls back the losing insert and cleans up its uploads.
+                issue = await db.scalar(submission)
+                if issue is None:
+                    raise
+            else:
+                issue = (await db.execute(submission)).scalar_one()
         attach_votes([issue], citizen_id)
     except HTTPException:
         raise
@@ -449,26 +454,16 @@ async def get_issues_by_location(
     }
 
 
-async def toggle_vote(issue_id: str, user_id: str, db: AsyncSession):
-    issue_response = await get_issue_by_id(issue_id, db, user_id)
+async def set_vote(issue_id: str, user_id: str, upvoted: bool, db: AsyncSession):
+    issue_response = await get_issue_by_id(issue_id, db, user_id, for_update=True)
     issue = issue_response["data"]
 
     try:
-        existing = await db.execute(
-            select(Upvote).where(
-                Upvote.issue_id == issue_id, Upvote.user_id == user_id
-            )
-        )
-        vote = existing.scalar_one_or_none()
-        if vote:
-            await db.delete(vote)
-            upvoted = False
-            message = "Upvote removed"
-        else:
+        vote = next((vote for vote in issue.upvotes if vote.user_id == user_id), None)
+        count = issue.upvote_count
+        if upvoted and vote is None:
             db.add(Upvote(user_id=user_id, issue_id=issue.id))
-            upvoted = True
-            message = "Upvoted successfully"
-            # ponytail: no self-upvote spam, owner learns from upvote_count
+            count += 1
             if issue.citizen_id and issue.citizen_id != user_id:
                 notify(
                     db,
@@ -478,25 +473,18 @@ async def toggle_vote(issue_id: str, user_id: str, db: AsyncSession):
                     f"Your report '{issue.title}' received an upvote.",
                     issue_id=issue.id,
                 )
+        elif not upvoted and vote is not None:
+            await db.delete(vote)
+            count -= 1
         await db.commit()
-    except IntegrityError:
-        # ponytail: double-tap race lost, the other request won
-        await db.rollback()
-        upvoted = True
-        message = "Upvoted successfully"
-    except HTTPException:
-        raise
-    except Exception:
+    except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to toggle upvote.",
+            detail="Failed to update upvote.",
         )
 
-    count_result = await db.execute(
-        select(func.count(Upvote.id)).where(Upvote.issue_id == issue_id)
-    )
     return {
-        "message": message,
-        "data": {"upvoted": upvoted, "upvote_count": count_result.scalar() or 0},
+        "message": "Upvoted successfully" if upvoted else "Upvote removed",
+        "data": {"upvoted": upvoted, "upvote_count": count},
     }
