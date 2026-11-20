@@ -117,9 +117,15 @@ See `.env.example` for the full list. Notes:
   Cloudinary as authenticated assets. When unset, they use `LOCAL_STORAGE_DIR`
   (default `./storage`, gitignored). The API serves both, revokes retired URLs,
   and retries storage deletions from the database while the app is running.
-- KYC identity documents are **always** stored locally and served only
-  through the authorized `GET /api/kyc/documents/{doc}` endpoint, never
-  through public URLs.
+- KYC documents are stored in the database and served through the authorized
+  `GET /api/kyc/documents/{doc}` endpoint. In production, use persistent
+  PostgreSQL. The API's database role owns `KycDocuments`, which enables row
+  level security without granting public API roles access. Include the table
+  in the database backup and restore policy for identity data.
+- On the first upgrade, start the API with the original `LOCAL_STORAGE_DIR`
+  available so it can import existing KYC files. Startup imports readable
+  JPEG, PNG, and WebP documents within the upload limits and logs files it
+  cannot import. Keep the old storage until the import is verified.
 
 ## Checks
 

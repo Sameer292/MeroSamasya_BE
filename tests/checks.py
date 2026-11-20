@@ -10,7 +10,9 @@ import os
 import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 TMP = tempfile.mkdtemp(prefix="merosamasya-checks-")
 os.environ["LOCAL_STORAGE_DIR"] = os.path.join(TMP, "storage")
@@ -38,6 +40,7 @@ def check(name, cond):
 async def main():
     import httpx
     import jwt
+    from PIL import Image
     from sqlalchemy import select, text
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
@@ -46,6 +49,7 @@ async def main():
     )
 
     import main as app_module
+    from app.core import storage as storage_config
     from app.core.database import Base, get_db
     from app.core.migrations import backfill_report_areas, run_startup_migrations
     from app.models import (
@@ -60,6 +64,7 @@ async def main():
     from app.services.auth_service import hash_password
     from app.services.category_service import ensure_default_categories
     from app.services.jwt_tokens import JWT_ALGORITHM, JWT_SECRET
+    from app.services.kyc_service import import_legacy_kyc_documents
     from app.services.nepal_location_service import load_bundled_seed
     from app.services.password_change import replace_password
     from app.services.report_area_service import boundaries
@@ -109,8 +114,17 @@ async def main():
     app_module.app.dependency_overrides[get_db] = override_db
 
     transport = httpx.ASGITransport(app=app_module.app)
-    IMG = ("p.jpg", b"\xff\xd8\xff" + b"x" * 100, "image/jpeg")
-    IMG2 = ("q.png", b"\x89PNG" + b"y" * 100, "image/png")
+    def image_file(fmt, color, size=(64, 64)):
+        with BytesIO() as buffer:
+            Image.new("RGB", size, color).save(buffer, format=fmt)
+            return (f"photo.{fmt.lower()}", buffer.getvalue(), f"image/{fmt.lower()}")
+
+    IMG = image_file("JPEG", "red")
+    IMG2 = image_file("PNG", "green")
+    webp = image_file("WEBP", "blue")
+    fake_jpeg = ("photo.jpg", b"\xff\xd8\xff" + b"x" * 100, "image/jpeg")
+    too_large = ("photo.jpg", b"x" * (5 * 1024 * 1024 + 1), "image/jpeg")
+    too_wide = image_file("PNG", "green", size=(8193, 1))
 
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
         # --- auth ---
@@ -308,6 +322,19 @@ async def main():
         r = await c.post("/api/issues/create", headers=H, data=report_data,
             files=[("images", ("t.txt", b"hi", "text/plain"))])
         check("bad file type 400", r.status_code == 400)
+        for invalid, message in [
+            (fake_jpeg, "JPEG, PNG, or WebP"),
+            ((IMG[0], IMG[1][:-30], IMG[2]), "JPEG, PNG, or WebP"),
+            (too_large, "5 MB"),
+            (too_wide, "dimensions"),
+        ]:
+            r = await c.post("/api/issues/create", headers=H, data=report_data, files=[("images", invalid)])
+            check(f"report image validation: {message}", r.status_code == 400
+                  and r.json()["detail"][0]["loc"] == ["body", "images", 0]
+                  and message in r.json()["detail"][0]["msg"])
+        r = await c.patch(f"/api/issues/{iid}", headers=H, files=[("images", fake_jpeg)])
+        check("edit validates replacement image bytes", r.status_code == 400
+              and r.json()["detail"][0]["loc"] == ["body", "images", 0])
         storage = Path(os.environ["LOCAL_STORAGE_DIR"]) / "issues"
         before_upload = set(storage.iterdir())
         r = await c.post("/api/issues/create", headers=H, data=report_data,
@@ -444,10 +471,15 @@ async def main():
         check("profile update accepts and trims a Devanagari name", r.status_code == 200
               and r.json()["data"]["name"] == "सीता श्रेष्ठ")
         avatar = r.json()["data"]["profile_picture_url"]
-        r = await c.patch("/api/auth/me", headers=H, files=[("profile_picture", IMG2)])
+        r = await c.patch("/api/auth/me", headers=H, files=[("profile_picture", too_large)])
+        check("oversized avatar returns a field error and preserves the previous image",
+              r.status_code == 400 and r.json()["detail"][0]["loc"] == ["body", "profile_picture"]
+              and (await c.get(avatar)).status_code == 200)
+        r = await c.patch("/api/auth/me", headers=H,
+                          files=[("profile_picture", ("old-app.jpg", webp[1], "image/jpeg"))])
         check("replaced avatar URL returns 404", r.status_code == 200
               and (await c.get(avatar)).status_code == 404
-              and (await c.get(r.json()["data"]["profile_picture_url"])).status_code == 200)
+              and (await c.get(r.json()["data"]["profile_picture_url"])).headers["Content-Type"] == "image/webp")
         replacements = await asyncio.gather(*(
             c.patch("/api/auth/me", headers=H, files=[("profile_picture", image)])
             for image in (IMG, IMG2)
@@ -504,6 +536,10 @@ async def main():
                     "gender": "other", "dateOfBirth": "1990-01-01",
                     "issuedDate": "2010-01-01", "wardNumber": "5",
                     "province": prov_j, "district": dist_j, "municipality": area}
+        r = await c.post("/api/kyc/submit", headers=H, data=kyc_data,
+                         files=[kyc_files[0], ("documentFrontPhoto", fake_jpeg), kyc_files[2]])
+        check("invalid KYC image receives a document field error", r.status_code == 400
+              and r.json()["detail"][0]["loc"] == ["body", "documentFrontPhoto"])
         r = await c.post("/api/kyc/submit", headers=H, data=kyc_data, files=kyc_files)
         check("kyc submit 201 pending", r.status_code == 201 and r.json()["data"]["status"] == "pending")
         check("kyc returns Other and January 1 calendar dates",
@@ -552,6 +588,18 @@ async def main():
         check("kyc migration recovers Kathmandu dates and is idempotent", r.status_code == 200
               and r.json()["data"]["date_of_birth"] == "1990-01-01"
               and r.json()["data"]["issued_date"] == "2010-01-01")
+        legacy_front = storage_config.save_local(IMG2[1], "kyc", "image/jpeg")
+        async with engine.begin() as conn:
+            await conn.execute(text('DELETE FROM "KycDocuments" WHERE kind = :kind'), {"kind": "front"})
+            await conn.execute(text('UPDATE "KycSubmissions" SET doc_front_path = :filename'),
+                               {"filename": legacy_front})
+        async with Session() as session:
+            await import_legacy_kyc_documents(session)
+            await import_legacy_kyc_documents(session)
+        with patch.object(storage_config, "STORAGE_DIR", Path(TMP) / "new-api-host"):
+            r = await c.get("/api/kyc/documents/front", headers=H)
+            check("legacy KYC import uses the real image type and keeps it available without the original disk",
+                  r.status_code == 200 and r.content == IMG2[1] and r.headers["Content-Type"] == "image/png")
         r = await c.get("/api/kyc/documents/selfie", headers=H)
         check("owner doc 200 image", r.status_code == 200)
         r = await c.get("/api/kyc/documents/selfie", headers=H2, params={"user_id": owner_id})
@@ -598,12 +646,21 @@ async def main():
         r = await c.patch(f"/api/admin/kyc/{sub_id}", headers=AH,
                           json={"status": "rejected", "note": "blurry photo"})
         check("kyc reject 200", r.status_code == 200)
-        r = await c.post("/api/kyc/submit", headers=H, data=kyc_data, files=kyc_files)
+        r = await c.post("/api/kyc/submit", headers=H, data=kyc_data,
+                         files=[kyc_files[0], ("documentFrontPhoto", fake_jpeg), kyc_files[2]])
+        check("broken KYC resubmission keeps the previous document", r.status_code == 400
+              and (await c.get("/api/kyc/documents/front", headers=H)).content == IMG2[1])
+        r = await c.post("/api/kyc/submit", headers=H, data=kyc_data,
+                         files=[kyc_files[0], ("documentFrontPhoto", webp), kyc_files[2]])
         check("resubmit after rejection 201", r.status_code == 201)
-        kyc_dir = os.path.join(os.environ["LOCAL_STORAGE_DIR"], "kyc")
-        check("old docs replaced, 3 files", len(os.listdir(kyc_dir)) == 3)
-        r = await c.get("/api/kyc/documents/front", headers=H)
-        check("new doc served 200", r.status_code == 200)
+        await engine.dispose()
+        with patch.object(storage_config, "STORAGE_DIR", Path(TMP) / "new-api-host"):
+            async with app_module.app.router.lifespan_context(app_module.app):
+                r = await c.get("/api/kyc/documents/front", headers=H)
+                check("replacement KYC doc survives restart on an API host without the original disk",
+                      r.status_code == 200 and r.content == webp[1]
+                      and r.headers["Content-Type"] == "image/webp"
+                      and r.headers["Cache-Control"] == "private, no-store")
         r = await c.get("/api/kyc/documents/selfie", headers=AH, params={"user_id": owner_id})
         check("admin reads owner doc 200", r.status_code == 200)
         async with httpx.AsyncClient(transport=transport, base_url="https://t") as portal:
@@ -697,10 +754,14 @@ async def check_hosted_photos(client, headers, report_data, image, session_facto
     destroyed = []
     failures = []
 
+    upload_count = 0
+
     def upload(payload, public_id, *, resource_type, type, overwrite, **_):
+        nonlocal upload_count
         assert resource_type == "image" and type == "authenticated" and overwrite is False
         assets[public_id] = payload
-        if payload == b"upload timed out after the remote write":
+        upload_count += 1
+        if upload_count == 2:
             raise TimeoutError("Simulated lost upload response")
         return {"format": "jpg"}
 
@@ -743,9 +804,7 @@ async def check_hosted_photos(client, headers, report_data, image, session_facto
         patch.object(photo_storage, "RETRY_DELAY", timedelta(milliseconds=30)),
     ):
         r = await client.post("/api/issues/create", headers=headers, data=report_data,
-                              files=[("images", image), ("images", (
-                                  "bad.jpg", b"upload timed out after the remote write", "image/jpeg"
-                              ))])
+                              files=[("images", image), ("images", image)])
         check("partially uploaded hosted report leaves no remote objects", r.status_code == 500 and not assets)
         r = await client.post("/api/issues/create", headers=headers, data=report_data, files=[("images", image)])
         issue = r.json()["data"]

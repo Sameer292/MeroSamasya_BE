@@ -1,15 +1,14 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, File, UploadFile, status, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.enum import KycGenderEnum
 from app.schemas.schema import KycResponse
 from app.services.kyc_service import submit_kyc, get_my_kyc, DOC_FIELDS
-from app.models.models import KycSubmission
+from app.models.models import KycDocument, KycSubmission
 from app.core.database import get_db
-from app.core.storage import local_path
 from app.core.admin_config import NO_STORE
 from app.dependencies.admin_deps import AdminSessionCookie, check_admin_role, require_admin
 from app.dependencies.auth_deps import BearerCredentials, get_current_user
@@ -72,8 +71,7 @@ async def get_document(
     db: AsyncSession = Depends(get_db),
     session: AdminSessionCookie = None,
 ):
-    field = dict(DOC_FIELDS).get(doc)
-    if field is None:
+    if doc not in DOC_FIELDS:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
@@ -85,17 +83,17 @@ async def get_document(
     if target_id != current_user.id:
         check_admin_role(current_user)
     result = await db.execute(
-        select(KycSubmission).where(KycSubmission.user_id == target_id)
+        select(KycDocument.data, KycDocument.content_type)
+        .join(KycSubmission, KycSubmission.id == KycDocument.submission_id)
+        .where(KycSubmission.user_id == target_id, KycDocument.kind == doc)
     )
-    submission = result.scalar_one_or_none()
-    if not submission:
+    document = result.one_or_none()
+    if document is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
-    try:
-        path = local_path("kyc", getattr(submission, field))
-    except (ValueError, FileNotFoundError):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
-        )
-    return FileResponse(path, headers=NO_STORE)
+    return Response(
+        document.data,
+        media_type=document.content_type,
+        headers={**NO_STORE, "X-Content-Type-Options": "nosniff"},
+    )
