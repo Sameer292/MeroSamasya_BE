@@ -1,10 +1,15 @@
 from datetime import date
 
 from sqlalchemy import inspect, select, text, update
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from app.models.models import Issue
 from app.services.report_area_service import report_area_options
+
+
+async def limit_startup_lock_wait(conn: AsyncConnection) -> None:
+    if conn.dialect.name == "postgresql":
+        await conn.execute(text("SET LOCAL lock_timeout = '10s'"))
 
 
 async def run_startup_migrations(engine: AsyncEngine):
@@ -22,6 +27,7 @@ async def run_startup_migrations(engine: AsyncEngine):
     backend = engine.url.get_backend_name()
     async with engine.begin() as conn:
         if backend == "postgresql":
+            await limit_startup_lock_wait(conn)
             await conn.execute(
                 text('ALTER TABLE "Users" DROP CONSTRAINT IF EXISTS users_location_id_fkey')
             )

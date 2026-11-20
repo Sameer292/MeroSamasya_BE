@@ -1,7 +1,10 @@
 import json
+from itertools import batched
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException, status
@@ -27,71 +30,76 @@ def load_bundled_seed() -> dict:
         return json.load(f)
 
 
-async def seed_locations(data: dict, db: AsyncSession):
-    """Idempotent upsert of the nested province/district/level payload.
+async def existing_ids(db: AsyncSession, table, keys):
+    result = await db.execute(select(*keys, table.c.id))
+    return {tuple(row[:-1]): row[-1] for row in result}
 
-    Matches by name within each parent, so re-runs only fill gaps (e.g. the
-    Rukum local levels missing from older databases) and never duplicate.
-    """
-    added = {"provinces": 0, "districts": 0, "local_levels": 0}
+
+async def insert_missing(db: AsyncSession, table, keys, records):
+    ids = await existing_ids(db, table, keys)
+    missing = {}
+    for record in records:
+        key = tuple(record[column.name] for column in keys)
+        if key not in ids:
+            missing.setdefault(key, record)
+    if not missing:
+        return ids, 0
+
+    insert = postgres_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
+    added = 0
+    for batch in batched(missing.values(), 300):
+        statement = (
+            insert(table).values(list(batch)).on_conflict_do_nothing(index_elements=keys)
+            .returning(*keys, table.c.id)
+        )
+        rows = (await db.execute(statement)).all()
+        ids.update({tuple(row[:-1]): row[-1] for row in rows})
+        added += len(rows)
+    # Another seeder may have inserted some keys between our read and insert.
+    if added != len(missing):
+        ids = await existing_ids(db, table, keys)
+    return ids, added
+
+
+def district_records(data, province_ids):
+    for province_name, districts in data.items():
+        for name in districts:
+            yield {"name": name, "province_id": province_ids[(province_name,)]}
+
+
+def local_level_records(data, province_ids, district_ids):
+    for province_name, districts in data.items():
+        province_id = province_ids[(province_name,)]
+        for district_name, local_types in districts.items():
+            district_id = district_ids[(district_name, province_id)]
+            for local_type, names in local_types.items():
+                level_type = TYPE_MAPPING.get(local_type)
+                if level_type is None:
+                    raise HTTPException(400, f"Unknown local level type: {local_type}")
+                for name in names:
+                    yield {"name": name, "type": level_type, "district_id": district_id}
+
+
+async def seed_location_tables(data: dict, db: AsyncSession) -> dict:
+    provinces, districts, levels = (model.__table__ for model in (Province, District, LocalLevel))
+    province_ids, province_count = await insert_missing(
+        db, provinces, (provinces.c.name,), ({"name": name} for name in data)
+    )
+    district_ids, district_count = await insert_missing(
+        db, districts, (districts.c.name, districts.c.province_id),
+        district_records(data, province_ids),
+    )
+    _, level_count = await insert_missing(
+        db, levels, (levels.c.name, levels.c.district_id),
+        local_level_records(data, province_ids, district_ids),
+    )
+    return {"provinces": province_count, "districts": district_count, "local_levels": level_count}
+
+
+async def seed_locations(data: dict, db: AsyncSession) -> dict:
+    """Add missing locations by name within their parent and preserve existing IDs."""
     try:
-        for province_name, districts in data.items():
-            province = (
-                await db.execute(
-                    select(Province).where(Province.name == province_name)
-                )
-            ).scalar_one_or_none()
-            if province is None:
-                province = Province(name=province_name)
-                db.add(province)
-                await db.flush()
-                added["provinces"] += 1
-
-            for district_name, local_types in districts.items():
-                district = (
-                    await db.execute(
-                        select(District).where(
-                            District.name == district_name,
-                            District.province_id == province.id,
-                        )
-                    )
-                ).scalar_one_or_none()
-                if district is None:
-                    district = District(
-                        name=district_name,
-                        province_id=province.id,
-                    )
-                    db.add(district)
-                    await db.flush()
-                    added["districts"] += 1
-
-                for local_type, local_levels in local_types.items():
-                    try:
-                        level_type = TYPE_MAPPING[local_type]
-                    except KeyError:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"Unknown local level type: {local_type}",
-                        )
-                    for local_level_name in local_levels:
-                        exists = (
-                            await db.execute(
-                                select(LocalLevel.id).where(
-                                    LocalLevel.name == local_level_name,
-                                    LocalLevel.district_id == district.id,
-                                )
-                            )
-                        ).scalar_one_or_none()
-                        if exists is None:
-                            db.add(
-                                LocalLevel(
-                                    name=local_level_name,
-                                    type=level_type,
-                                    district_id=district.id,
-                                )
-                            )
-                            added["local_levels"] += 1
-
+        added = await seed_location_tables(data, db)
         await db.commit()
     except HTTPException:
         await db.rollback()
