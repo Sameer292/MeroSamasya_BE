@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
+from http.cookies import SimpleCookie
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -828,6 +829,10 @@ async def main():
             origin = {"Origin": os.environ["ADMIN_WEB_ORIGIN"]}
             r = await portal.post("/api/auth/admin/login", json=admin_login, headers=origin)
             check("main admin cookie login 204", r.status_code == 204)
+            cookie = SimpleCookie(r.headers["set-cookie"])["__Host-admin-session"]
+            check("HTTPS admin cookie supports cross-site requests without JavaScript access",
+                  cookie["samesite"] == "none" and cookie["secure"] and cookie["httponly"]
+                  and cookie["path"] == "/" and not cookie["domain"])
             r = await portal.post("/api/category/seed")
             check("cookie-authenticated category write requires portal origin", r.status_code == 403)
             r = await portal.post("/api/category/seed", headers=origin)
