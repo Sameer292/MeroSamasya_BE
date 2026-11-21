@@ -18,6 +18,11 @@ and `/api/auth/admin/logout`. Set `ADMIN_WEB_ORIGIN`
 to the browser-facing portal origin and keep `ADMIN_COOKIE_SECURE=true` on HTTPS.
 Set it to `false` for local HTTP development.
 
+Secure admin session cookies use `SameSite=None` so the portal can call the API
+directly from a separate HTTPS site. Local HTTP cookies use `SameSite=Lax`;
+use the same hostname for the portal and API. Browser requests must include
+credentials. CORS allows only `ADMIN_WEB_ORIGIN`, and writes still verify it.
+
 Public registration creates citizen accounts. The `data.role` field on
 `GET /api/auth/me` reports `citizen`, `admin`, or `superadmin` from the
 account's current membership. Existing admin grants continue to apply.

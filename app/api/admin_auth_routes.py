@@ -19,7 +19,11 @@ from app.services.auth_service import authenticate_user
 from app.services.password_change import change_password
 
 router = APIRouter()
-COOKIE_OPTIONS = {"secure": ADMIN_COOKIE_SECURE, "httponly": True, "samesite": "lax"}
+COOKIE_OPTIONS = {
+    "secure": ADMIN_COOKIE_SECURE,
+    "httponly": True,
+    "samesite": "none" if ADMIN_COOKIE_SECURE else "lax",
+}
 
 
 @router.post("/login", status_code=204, dependencies=[Depends(verify_admin_origin)])
@@ -41,7 +45,8 @@ async def get_admin(response: Response, user: Annotated[User, Depends(require_ad
 
 
 @router.post(
-    "/logout", status_code=204,
+    "/logout",
+    status_code=204,
     dependencies=[Depends(require_admin), Depends(verify_admin_origin)],
 )
 async def logout_admin(db: Database, session: AdminSessionCookie = None):
@@ -56,7 +61,9 @@ async def logout_admin(db: Database, session: AdminSessionCookie = None):
     "/change-password", status_code=204, dependencies=[Depends(verify_admin_origin)]
 )
 async def change_admin_password(
-    request: PasswordChangeRequest, db: Database, user: Annotated[User, Depends(require_admin)]
+    request: PasswordChangeRequest,
+    db: Database,
+    user: Annotated[User, Depends(require_admin)],
 ):
     await change_password(db, user, request)
     response = Response(status_code=204, headers=NO_STORE)
