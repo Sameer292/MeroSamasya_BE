@@ -15,6 +15,11 @@ def issue_read_options():
 
 def filtered_issue_ids(query: AdminIssueQuery):
     issues = select(Issue.id, Issue.created_at).where(Issue.deleted_at.is_(None))
+    if query.south is not None:
+        issues = issues.where(
+            Issue.latitude.between(query.south, query.north),
+            Issue.longitude.between(query.west, query.east),
+        )
     if query.status is not None:
         issues = issues.where(Issue.status == query.status)
     if query.category_id is not None:

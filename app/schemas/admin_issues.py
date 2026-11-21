@@ -1,9 +1,9 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.enum import IssueStatusEnum
-from app.schemas.schema import IssueData, PaginationMeta
+from app.schemas.schema import IssueData, Latitude, Longitude, PaginationMeta
 
 
 class AdminIssueQuery(BaseModel):
@@ -13,6 +13,21 @@ class AdminIssueQuery(BaseModel):
     sort: Literal["newest", "oldest"] = "newest"
     page: int = Field(default=1, ge=1, le=2_147_483_647)
     limit: int = Field(default=10, ge=1, le=100)
+    south: Latitude | None = None
+    north: Latitude | None = None
+    west: Longitude | None = None
+    east: Longitude | None = None
+
+    @model_validator(mode="after")
+    def validate_bounds(self):
+        bounds = (self.south, self.north, self.west, self.east)
+        if all(value is None for value in bounds):
+            return self
+        if any(value is None for value in bounds):
+            raise ValueError("Provide south, north, west and east together.")
+        if self.south > self.north or self.west > self.east:
+            raise ValueError("Bounds must be ordered south to north and west to east.")
+        return self
 
 
 class ReporterSummary(BaseModel):
