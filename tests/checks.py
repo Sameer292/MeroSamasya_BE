@@ -714,6 +714,8 @@ async def main():
         r = await c.get("/api/admin/issues", headers=AH, params={"search": "updated title"})
         check("main admin issue search retains reporter and filters", r.status_code == 200
               and r.json()["data"]["issues"][0]["reporter"]["id"] == owner_id)
+        from admin_map_checks import check_admin_map
+        await check_admin_map(c, Session, AH, issue)
         r = await c.get(f"/api/admin/subscribers/{owner_id}", headers=AH)
         check("main subscriber detail resolves a live local level", r.status_code == 200
               and r.json()["data"]["location"] == {"id": level_id, "name": home.name})
