@@ -592,6 +592,22 @@ async def main():
         check("login with new password 200", r.status_code == 200)
         H = {"Authorization": f"Bearer {r.json()['data']['access_token']}"}
 
+        async def check_optional_kyc_actions(review_status):
+            r = await c.post("/api/issues/create", headers=H,
+                             data={**report_data, "submission_id": str(uuid4())}, files=files)
+            check(f"{review_status} citizen can report without KYC approval", r.status_code == 201)
+            report_id = r.json()["data"]["id"]
+            for path in (f"/api/issues/{report_id}", "/api/issues/me", "/api/notifications", "/api/auth/me"):
+                check(f"{review_status} citizen can read {path}", (await c.get(path, headers=H)).status_code == 200)
+            r = await c.patch(f"/api/issues/{report_id}", headers=H, data={"title": "Corrected report title"})
+            check(f"{review_status} citizen can edit own open report", r.status_code == 200)
+            r = await c.post(f"/api/issues/{report_id}/upvote", headers=H, json={"upvoted": True})
+            check(f"{review_status} citizen can upvote", r.status_code == 200)
+            r = await c.delete(f"/api/issues/{report_id}", headers=H)
+            check(f"{review_status} citizen can delete own open report", r.status_code == 200)
+
+        await check_optional_kyc_actions("unsubmitted")
+
         # --- kyc (area chain validated against live Nepal data) ---
         provs = (await c.get("/api/nepal/provinces")).json()
         prov = next(p for p in provs if p["name"] == "बागमती प्रदेश")
@@ -607,6 +623,9 @@ async def main():
                     "gender": "other", "dateOfBirth": "1990-01-01",
                     "issuedDate": "2010-01-01", "wardNumber": "5",
                     "province": prov_j, "district": dist_j, "municipality": area}
+        r = await c.post("/api/kyc/submit", headers=H, data=kyc_data)
+        check("initial KYC requires all photos", r.status_code == 400
+              and r.json()["detail"][0]["loc"] == ["body", "selfiePhoto"])
         r = await c.post("/api/kyc/submit", headers=H, data=kyc_data,
                          files=[kyc_files[0], ("documentFrontPhoto", fake_jpeg), kyc_files[2]])
         check("invalid KYC image receives a document field error", r.status_code == 400
@@ -618,6 +637,9 @@ async def main():
                r.json()["data"]["issued_date"]) == ("other", "1990-01-01", "2010-01-01"))
         check("kyc exposes links not paths", "documents" in r.json()["data"]
               and "selfie_path" not in r.json()["data"])
+        r = await c.post("/api/kyc/submit", headers=H2, data=kyc_data)
+        check("another citizen cannot retain the owner's KYC photos", r.status_code == 400
+              and r.json()["detail"][0]["loc"] == ["body", "selfiePhoto"])
         for field, value in [
             ("wardNumber", "ABC"),
             ("wardNumber", "0"),
@@ -643,6 +665,11 @@ async def main():
         r = await c.post("/api/kyc/submit", headers=H, data=kyc_data, files=kyc_files)
         check("resubmit while pending 409", r.status_code == 409)
         r = await c.get("/api/kyc/me", headers=H)
+        check("citizen KYC exposes exact picker IDs and names",
+              r.json()["data"]["province"] == {"id": prov["id"], "name": prov["name"]}
+              and r.json()["data"]["district"] == {"id": dist["id"], "name": dist["name"]}
+              and r.json()["data"]["municipality"] == {"id": lvl["id"], "name": lvl["name"]})
+        await check_optional_kyc_actions("pending")
         check("kyc me returns both January 1 dates", r.status_code == 200
               and r.json()["data"]["date_of_birth"] == "1990-01-01"
               and r.json()["data"]["issued_date"] == "2010-01-01")
@@ -742,6 +769,7 @@ async def main():
         r = await c.patch(f"/api/admin/kyc/{sub_id}", headers=AH,
                           json={"status": "approved", "note": "looks good"})
         check("kyc approve 200", r.status_code == 200 and r.json()["data"]["status"] == "approved")
+        await check_optional_kyc_actions("approved")
         kyc_inbox = (await c.get("/api/notifications", headers=H, params={"limit": 100})).json()["data"]
         kyc_notification = next(n for n in kyc_inbox["notifications"] if n["type"] == "kyc")
         check("KYC update has a verification destination without a report id",
@@ -756,13 +784,36 @@ async def main():
         r = await c.patch(f"/api/admin/kyc/{sub_id}", headers=AH,
                           json={"status": "rejected", "note": "blurry photo"})
         check("kyc reject 200", r.status_code == 200)
+        rejected = (await c.get("/api/kyc/me", headers=H)).json()["data"]
+        check("rejected citizen receives reason and saved details",
+              rejected["status"] == "rejected" and rejected["reviewer_note"] == "blurry photo"
+              and rejected["full_name"] == kyc_data["fullName"]
+              and rejected["citizenship_number"] == kyc_data["citizenshipNumber"]
+              and rejected["municipality"]["id"] == lvl["id"])
+        await check_optional_kyc_actions("rejected")
+        r = await c.post("/api/kyc/submit", headers=H, data={**kyc_data, "fullName": "Corrected Name", "tole": "New Tole"})
+        check("rejected citizen can correct details while retaining every photo", r.status_code == 201
+              and r.json()["data"]["status"] == "pending" and r.json()["data"]["reviewer_note"] is None
+              and r.json()["data"]["full_name"] == "Corrected Name" and r.json()["data"]["tole"] == "New Tole"
+              and (await c.get("/api/kyc/documents/front", headers=H)).content == IMG2[1]
+              and (await c.get("/api/kyc/documents/selfie", headers=H)).content == IMG[1])
+        r = await c.post("/api/kyc/submit", headers=H, data=kyc_data)
+        check("retained-photo resubmission is locked while pending", r.status_code == 409)
+        await c.patch(f"/api/admin/kyc/{sub_id}", headers=AH, json={"status": "rejected", "note": "Replace front"})
         r = await c.post("/api/kyc/submit", headers=H, data=kyc_data,
                          files=[kyc_files[0], ("documentFrontPhoto", fake_jpeg), kyc_files[2]])
         check("broken KYC resubmission keeps the previous document", r.status_code == 400
               and (await c.get("/api/kyc/documents/front", headers=H)).content == IMG2[1])
+        failed_resubmission = (await c.get("/api/kyc/me", headers=H)).json()["data"]
+        check("failed resubmission preserves the rejected status and reviewer reason",
+              failed_resubmission["status"] == "rejected"
+              and failed_resubmission["reviewer_note"] == "Replace front"
+              and failed_resubmission["full_name"] == "Corrected Name")
         r = await c.post("/api/kyc/submit", headers=H, data=kyc_data,
-                         files=[kyc_files[0], ("documentFrontPhoto", webp), kyc_files[2]])
-        check("resubmit after rejection 201", r.status_code == 201)
+                         files=[("documentFrontPhoto", webp)])
+        check("resubmit after rejection replaces only the supplied photo", r.status_code == 201
+              and (await c.get("/api/kyc/documents/selfie", headers=H)).content == IMG[1]
+              and (await c.get("/api/kyc/documents/back", headers=H)).content == IMG[1])
         await engine.dispose()
         with patch.object(storage_config, "STORAGE_DIR", Path(TMP) / "new-api-host"):
             async with app_module.app.router.lifespan_context(app_module.app):

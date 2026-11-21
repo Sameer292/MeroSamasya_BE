@@ -365,6 +365,11 @@ class KycDocumentLinks(BaseModel):
     back: str
 
 
+class KycLocation(BaseModel):
+    id: int
+    name: str
+
+
 class KycData(BaseModel):
     id: str
     full_name: str
@@ -378,6 +383,9 @@ class KycData(BaseModel):
     district_name: str
     municipality_name: str
     local_level_id: Optional[str] = None
+    province: Optional[KycLocation] = None
+    district: Optional[KycLocation] = None
+    municipality: Optional[KycLocation] = None
     status: str
     reviewer_note: Optional[str] = None
     documents: KycDocumentLinks

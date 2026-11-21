@@ -118,15 +118,26 @@ legacy behavior (new files replace all; no files touches nothing). Explicit
 
 ## KYC (`/api/kyc`, Bearer required)
 
+KYC is optional for citizen actions. Reporting, tracking, editing/deleting an
+eligible own report, upvoting, notifications and account changes require no KYC
+approval. Authentication, ownership and report-status rules still apply. Mobile
+must keep these actions available for citizens who have never submitted KYC and
+for pending, rejected and approved citizens.
+
+Mobile shows pending submissions as in review with a decision notification next,
+and approved submissions as verified with no further action. Rejected submissions
+show `reviewer_note` and reopen the saved details for correction. Successful
+resubmission resets status to pending and clears the old reviewer note.
+
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| POST | `/api/kyc/submit` | multipart: `fullName`, `citizenshipNumber`, `gender` (`male`, `female`, `other`), `dateOfBirth`, `issuedDate` (both `YYYY-MM-DD`), `wardNumber` (positive whole number), `tole` (optional), `province`, `district`, `municipality` (JSON objects with integer `id` and `name` from the Nepal API), files `selfiePhoto`, `documentFrontPhoto`, `documentBackPhoto` (images, ≤5 MB) | 201 with pending status. Resubmission returns 409 while pending or approved and is allowed after rejection. |
-| GET | `/api/kyc/me` | — | own submission + status; `documents: {selfie, front, back}` link paths, never file paths |
+| POST | `/api/kyc/submit` | multipart: `fullName`, `citizenshipNumber`, `gender` (`male`, `female`, `other`), `dateOfBirth`, `issuedDate` (both `YYYY-MM-DD`), `wardNumber` (positive whole number), `tole` (optional), `province`, `district`, `municipality` (JSON objects with integer `id` and `name` from the Nepal API), files `selfiePhoto`, `documentFrontPhoto`, `documentBackPhoto` (images, ≤5 MB; all required initially; omitted files on rejected resubmissions retain the citizen’s own saved documents) | 201 with pending status. Resubmission returns 409 while pending or approved and is allowed after rejection. |
+| GET | `/api/kyc/me` | — | own submission + status + `reviewer_note`; `province`, `district`, `municipality` are `{id: integer, name}` picker values resolved from the saved local level (null for unavailable legacy areas, which must be selected again); `documents: {selfie, front, back}` link paths, never file paths |
 | GET | `/api/kyc/documents/{selfie\|front\|back}[?user_id=]` | — | Private image bytes from the database, with the verified media type and `Cache-Control: private, no-store`. Citizens can read their own documents. Admins can read a submission for the specified user. |
 
-Identity documents are stored on local disk only and never exposed as public
-URLs. On resubmission, new files commit first and old files are deleted only
-after the commit succeeds.
+Identity documents are stored privately in the database and never exposed as
+public URLs. Photo replacements and corrected details commit together. Omitted
+photos are retained; obsolete legacy disk files are deleted after commit.
 
 The issue date must be on or after the date of birth, and both dates must be
 on or before today's date in Nepal. The API checks that the area IDs and names

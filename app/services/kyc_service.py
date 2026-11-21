@@ -182,10 +182,14 @@ async def submit_kyc(
         db, province_data, district_data, municipality_data
     )
 
+    uploads = {
+        "selfie": (selfie, "selfiePhoto"),
+        "front": (doc_front, "documentFrontPhoto"),
+        "back": (doc_back, "documentBackPhoto"),
+    }
     documents = {
-        "selfie": await read_image_upload(selfie, "selfiePhoto"),
-        "front": await read_image_upload(doc_front, "documentFrontPhoto"),
-        "back": await read_image_upload(doc_back, "documentBackPhoto"),
+        kind: await read_image_upload(upload, field)
+        for kind, (upload, field) in uploads.items() if upload is not None
     }
     values = {
         "full_name": full_name,
@@ -226,6 +230,14 @@ async def submit_kyc(
                 ),
             )
         old_files = ()
+        saved_kinds = set()
+        if submission is not None:
+            saved_kinds = set(await db.scalars(
+                select(KycDocument.kind).where(KycDocument.submission_id == submission.id)
+            ))
+        for kind, (_, field) in uploads.items():
+            if kind not in documents and kind not in saved_kinds:
+                raise field_error(field, "Select an image.")
         if submission is not None:
             old_files = tuple(getattr(submission, field) for field in DOC_FIELDS.values())
             for field in DOC_FIELDS.values():
@@ -233,7 +245,10 @@ async def submit_kyc(
             for field, value in values.items():
                 setattr(submission, field, value)
             await db.execute(
-                delete(KycDocument).where(KycDocument.submission_id == submission.id)
+                delete(KycDocument).where(
+                    KycDocument.submission_id == submission.id,
+                    KycDocument.kind.in_(documents),
+                )
             )
             message = "KYC resubmitted successfully"
         else:
@@ -273,4 +288,19 @@ async def get_my_kyc(user_id: str, db: AsyncSession):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No KYC submission found.",
         )
-    return {"message": "KYC fetched successfully", "data": serialize_kyc(submission)}
+    data = serialize_kyc(submission)
+    if submission.local_level_id and submission.local_level_id.isdecimal():
+        row = (await db.execute(
+            select(LocalLevel, District, Province)
+            .join(District, LocalLevel.district_id == District.id)
+            .join(Province, District.province_id == Province.id)
+            .where(LocalLevel.id == int(submission.local_level_id))
+        )).one_or_none()
+        if row is not None:
+            level, district, province = row
+            data.update({
+                "province": {"id": province.id, "name": province.name},
+                "district": {"id": district.id, "name": district.name},
+                "municipality": {"id": level.id, "name": level.name},
+            })
+    return {"message": "KYC fetched successfully", "data": data}
