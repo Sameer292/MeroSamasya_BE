@@ -14,6 +14,7 @@ from app.schemas.enum import IssueStatusEnum
 from app.schemas.schema import (
     CitizenIssueQuery, IssueCreate, IssueUpdate, IssueData, IssueDetailData,
 )
+from app.services.account_access import lock_active_account
 from app.services.image_upload import read_image_upload
 from app.services.notification_service import notify
 from app.services.photo_storage import PhotoChanges, change_photos
@@ -87,6 +88,7 @@ async def create_issue(
                         db, data.local_level_id, data.latitude, data.longitude
                     )
                     urls = await upload_issue_photos(photos, images)
+                    await lock_active_account(db, citizen_id)
                     db.add(Issue(
                         citizen_id=citizen_id,
                         submission_id=submission_id,
@@ -205,6 +207,7 @@ async def get_issue_detail(issue_id: str, db: AsyncSession, current_user_id: str
 async def delete_issue(
     issue_id: str, citizen_id: str, delete_reason: str | None, db: AsyncSession
 ):
+    await lock_active_account(db, citizen_id)
     issue_response = await get_issue_by_id(issue_id, db, citizen_id, for_update=True)
     issue = issue_response["data"]
 
@@ -272,6 +275,7 @@ async def update_issue(
     try:
         async with change_photos(db) as photos:
             urls = await upload_issue_photos(photos, images)
+            await lock_active_account(db, citizen_id)
             issue = await get_editable_issue(issue_id, citizen_id, db, lock=True)
             if data.category_id is not None and data.category_id != issue.category_id:
                 category = await db.scalar(
@@ -443,6 +447,7 @@ async def get_issues_by_location(
 
 
 async def set_vote(issue_id: str, user_id: str, upvoted: bool, db: AsyncSession):
+    await lock_active_account(db, user_id)
     issue_response = await get_issue_by_id(issue_id, db, user_id, for_update=True)
     issue = issue_response["data"]
 

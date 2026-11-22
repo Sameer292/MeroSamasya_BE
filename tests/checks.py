@@ -908,6 +908,10 @@ async def main():
         check("ambiguous legacy email case returns 401", r.status_code == 401)
 
         await check_hosted_photos(c, H, report_data, IMG, Session)
+        from account_deletion_checks import check_account_deletion
+        admin_tokens = (await c.post("/api/auth/login", json={**admin_login, "password": "reset1234"})).json()["data"]
+        deletion_admin_headers = {"Authorization": f"Bearer {admin_tokens['access_token']}"}
+        await check_account_deletion(c, Session, app_module.app, check, report_data, kyc_data, IMG, H2, deletion_admin_headers)
 
     await run_startup_migrations(engine)
     async with Session() as s:

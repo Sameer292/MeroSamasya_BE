@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import User
 from app.schemas.schema import UpdateProfileRequest
+from app.services.account_access import lock_active_account
 from app.services.image_upload import read_image_upload
 from app.services.location_service import (
     get_level_or_404,
@@ -41,9 +42,8 @@ async def update_profile(
             if avatar is not None:
                 data_bytes, content_type = avatar
                 values["profile_picture_url"] = await photos.upload(data_bytes, "profiles", content_type)
-                if db.get_bind().dialect.name == "sqlite":
-                    await db.execute(update(User.__table__).where(User.id == user_id)
-                                     .values(updated_at=User.updated_at))
+            await lock_active_account(db, user_id)
+            if avatar is not None:
                 previous_avatar = await db.scalar(
                     select(User.profile_picture_url).where(User.id == user_id).with_for_update()
                 )
