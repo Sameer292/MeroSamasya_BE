@@ -1,6 +1,6 @@
 import math
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 from app.models.models import User, KycSubmission
@@ -52,6 +52,7 @@ async def admin_list_kyc(
     limit: int,
     status_filter: str | None,
     db: AsyncSession,
+    search: str | None = None,
 ):
     try:
         offset = (page - 1) * limit
@@ -63,13 +64,18 @@ async def admin_list_kyc(
                     detail="Invalid status filter.",
                 )
             filters.append(KycSubmission.status == status_filter)
+        if search := (search or "").strip():
+            filters.append(or_(
+                KycSubmission.full_name.icontains(search, autoescape=True),
+                KycSubmission.citizenship_number.icontains(search, autoescape=True),
+            ))
         total = (
             await db.execute(select(func.count(KycSubmission.id)).where(*filters))
         ).scalar() or 0
         result = await db.execute(
             select(KycSubmission)
             .where(*filters)
-            .order_by(KycSubmission.created_at.desc())
+            .order_by(KycSubmission.created_at.desc(), KycSubmission.id.desc())
             .offset(offset)
             .limit(limit)
         )
@@ -90,14 +96,16 @@ async def admin_list_kyc(
                 "limit": limit,
                 "total_pages": math.ceil(total / limit) if limit else 0,
             },
-            "submissions": [serialize_kyc(s) for s in submissions],
+            "submissions": [serialize_admin_kyc(s) for s in submissions],
         },
     }
 
 
-async def admin_review_kyc(
-    submission_id: str, new_status: str, note: str | None, db: AsyncSession
-):
+def serialize_admin_kyc(submission: KycSubmission) -> dict:
+    return {**serialize_kyc(submission), "user_id": str(submission.user_id)}
+
+
+async def find_kyc(submission_id: str, db: AsyncSession):
     result = await db.execute(
         select(KycSubmission).where(KycSubmission.id == submission_id)
     )
@@ -106,6 +114,18 @@ async def admin_review_kyc(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="KYC submission not found."
         )
+    return submission
+
+
+async def admin_get_kyc(submission_id: str, db: AsyncSession):
+    submission = await find_kyc(submission_id, db)
+    return {"message": "KYC submission fetched successfully", "data": serialize_admin_kyc(submission)}
+
+
+async def admin_review_kyc(
+    submission_id: str, new_status: str, note: str | None, db: AsyncSession
+):
+    submission = await find_kyc(submission_id, db)
     try:
         submission.status = KycStatusEnum(new_status)
         submission.reviewer_note = note
@@ -132,5 +152,5 @@ async def admin_review_kyc(
         )
     return {
         "message": "KYC reviewed successfully",
-        "data": serialize_kyc(submission),
+        "data": serialize_admin_kyc(submission),
     }
