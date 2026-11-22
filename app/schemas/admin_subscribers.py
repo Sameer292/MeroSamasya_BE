@@ -38,6 +38,7 @@ class SubscriberData(SubscriberProfile):
 
 
 class SubscriberHistoryIssue(IssueData):
+    upvote_count: int | None = None
     created_at: datetime | None
     updated_at: datetime | None
 

@@ -174,6 +174,12 @@ return 404. Older direct Cloudinary URLs are revoked through CDN invalidation.
 
 ## Admin (`/api/admin`, admin or superadmin required)
 
+Issue references use the full UUID in `id`, including in URLs and displayed
+references. Admin issue lists, details and subscriber issue history return
+`upvote_count: null` until vote counts are loaded by those queries. Clients hide
+null or missing counts; an actual integer zero remains a valid count. Aggregate
+subscriber upvotes are deferred and are not part of the subscriber API.
+
 | Method | Path | Body | Notes |
 |---|---|---|---|
 | GET | `/api/admin/issues?page&limit&status&category_id&search&sort&south&north&west&east` | — | paginated results with reporter details and optional filters; bounds are inclusive and applied before pagination/counts. Supply all four finite bounds together, ordered south ≤ north and west ≤ east, within latitude ±90 and longitude ±180; invalid bounds return 422. Omit bounds for the full directory. |

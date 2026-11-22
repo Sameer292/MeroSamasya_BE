@@ -38,6 +38,7 @@ class ReporterSummary(BaseModel):
 
 
 class AdminIssueData(IssueData):
+    upvote_count: int | None = None
     reporter: ReporterSummary | None = Field(validation_alias="citizen")
 
 
