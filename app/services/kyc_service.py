@@ -5,15 +5,16 @@ from zoneinfo import ZoneInfo
 
 from anyio import to_thread
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import delete, exists, select, update
+from sqlalchemy import delete, exists, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.storage import delete_local, local_path
-from app.models.models import KycDocument, KycSubmission, User
+from app.models.models import KycDocument, KycSubmission
 from app.models.nepal_location_models import District, LocalLevel, Province
 from app.schemas.enum import KycGenderEnum, KycStatusEnum
+from app.services.account_access import lock_active_account
 from app.services.image_upload import read_image_file, read_image_upload
 
 NEPAL_TIMEZONE = ZoneInfo("Asia/Kathmandu")
@@ -208,12 +209,7 @@ async def submit_kyc(
     }
 
     try:
-        # Serialize submissions for the same user, including their first submission.
-        if db.get_bind().dialect.name == "sqlite":
-            await db.execute(update(User.__table__).where(User.id == user_id)
-                             .values(updated_at=User.updated_at))
-        else:
-            await db.execute(select(User.id).where(User.id == user_id).with_for_update(key_share=True))
+        await lock_active_account(db, user_id)
         submission = await db.scalar(
             select(KycSubmission).where(KycSubmission.user_id == user_id).with_for_update(key_share=True)
         )

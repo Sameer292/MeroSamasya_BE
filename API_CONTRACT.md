@@ -19,6 +19,7 @@ return a 400 with a field error. Report photo errors include the upload index.
 | POST | `/api/auth/refresh` | no | `{refresh_token}` (must be a refresh token; access tokens 401) | `{access_token, refresh_token, user_id}` (rotated) |
 | GET | `/api/auth/me` | Bearer | — | `UserData` (see below) |
 | PATCH | `/api/auth/me` | Bearer | multipart `{name?, phone?, location_id?, profile_picture?}` | `UserData` |
+| DELETE | `/api/auth/me` | Bearer, citizen only | JSON `{current_password}` (required; incorrect → 400) | 204, account deleted and all sessions revoked |
 | POST | `/api/auth/change-password` | Bearer | `{current_password, new_password, confirm_new_password?}` (same strength rules; wrong current → 400) | 204, all of the account's sessions revoked |
 | POST | `/api/auth/logout` | no | `{refresh_token}` | 204, the submitted token's session revoked |
 
@@ -28,6 +29,54 @@ Inactive and suspended users receive 403. Missing and deleted accounts
 receive 401. Revoked sessions return 401 on bearer requests and refresh.
 Refresh tokens can be rotated once. Register and login normalize email to
 lowercase.
+
+### Citizen privacy and deletion retention policy
+
+Report text and exact pins are visible to signed-in citizens and administrators
+for finding and resolving civic issues. Report photos and avatars are accessible
+to anyone with their URL. Identity details, citizenship document images, and
+selfies are collected for identity verification and review, accessible only to
+the owner and authorized administrators, and kept while the account exists.
+KYC is optional for posting reports. Mobile explains this before submission.
+
+Account deletion requires an active bearer session and the current password in
+the same request. It is permanent; this endpoint cannot delete administrator
+accounts. A single transaction:
+
+- Removes KYC submissions, document bytes, citizenship details, addresses,
+  dates of birth, reviewer notes, notifications, and the citizen's upvotes.
+- Scrubs name, email, phone, residence, avatar, and password. Only the account
+  UUID, timestamps, deleted status, a synthetic email, and a random password hash
+  remain as a tombstone; the original email can be registered again.
+- Revokes every refresh/access session and any portal session for the account.
+  Access tokens are checked against live sessions on each authenticated request.
+- Clears `citizen_id` and the submission retry ID on all civic reports, including
+  previously deleted reports. Civic report text, photos, exact pins, municipality,
+  status, timestamps, and moderation history remain for civic accountability,
+  without an account link. There is no automatic expiry for retained civic records.
+  Personal details a citizen placed in report text or photos are **not** automatically
+  redacted. The deletion notice states this and that report management is lost.
+- Retires the avatar and queues legacy local identity files for deletion. API
+  photo URLs and all KYC document endpoints immediately lose access. Physical
+  cleanup uses the durable `PhotoObjects` queue;
+  the worker retries failures every 30 seconds, including after server restarts.
+  Cloudinary cleanup also invalidates cached copies. Legacy public Cloudinary
+  URLs remain accessible until that cleanup succeeds. Already downloaded copies
+  cannot be recalled.
+
+Citizen profile, KYC, report, and vote writes recheck and lock the active account
+before persisting, so requests authenticated before deletion cannot recreate data.
+Failures before commit roll back deletion. On confirmed 204, mobile clears this
+account's saved draft and draft photos, in-memory report form, query cache, and
+secure session on the current device. Other devices lose server access; their
+offline drafts cannot be remotely erased. Local cleanup failures are surfaced
+with instructions to clear app storage.
+
+This policy governs the live application database and managed file storage.
+Infrastructure backups and external copies are not managed by this API. Operators
+must apply their backup expiry controls and reapply account deletions before
+restoring a backup to service; restoring an old database must not restore access
+to deleted accounts or identity documents.
 
 Signup and profile updates trim names and require 2–50 characters using
 Unicode letters, combining marks, and spaces. Request validation returns

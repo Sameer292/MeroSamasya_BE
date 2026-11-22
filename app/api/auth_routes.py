@@ -3,6 +3,8 @@ from typing import Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import User
 from app.schemas.password_change import CitizenPasswordChangeRequest
+from app.schemas.account_deletion import AccountDeletionRequest
+from app.services.account_deletion import delete_account
 from app.schemas.schema import (
     UserCreate,
     UserLogin,
@@ -35,6 +37,15 @@ async def get_me(
     current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     return await serialize_user(db, current_user, "User fetched successfully")
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(
+    request: AccountDeletionRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await delete_account(db, user, request)
 
 
 @router.post(
