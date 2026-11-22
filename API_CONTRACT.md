@@ -179,8 +179,15 @@ return 404. Older direct Cloudinary URLs are revoked through CDN invalidation.
 | GET | `/api/admin/issues?page&limit&status&category_id&search&sort&south&north&west&east` | — | paginated results with reporter details and optional filters; bounds are inclusive and applied before pagination/counts. Supply all four finite bounds together, ordered south ≤ north and west ≤ east, within latitude ±90 and longitude ±180; invalid bounds return 422. Omit bounds for the full directory. |
 | GET | `/api/admin/issues/overview` | — | `{open, in_progress, resolved, closed, total_issues, total_users, kyc_pending}` |
 | PATCH | `/api/admin/issues/{id}/status` | `{status}` | Applies the moderation transition policy (409 for an invalid transition), records the change and notifies the owner |
-| GET | `/api/admin/kyc?page&limit&status` | — | submissions with status |
-| PATCH | `/api/admin/kyc/{id}` | `{status: approved\|rejected, note?}` | notifies the user |
+| GET | `/api/admin/kyc?page&limit&status&search` | — | submissions with status; literal case-insensitive search by applicant name or citizenship number (max 200 characters), applied before counts and pagination; newest first, then ID descending |
+| GET | `/api/admin/kyc/{id}` | — | standalone submission lookup, 404 if missing |
+| PATCH | `/api/admin/kyc/{id}` | `{status: approved\|rejected, note?}` | notifies the user; rejection requires a nonblank reason, approval note is optional |
+
+Admin KYC list, detail and review responses include `user_id` alongside the
+submission fields. Load each document through authenticated
+`GET /api/kyc/documents/{selfie|front|back}?user_id={user_id}`. Portal cookies
+are accepted; private documents and admin KYC responses use `private, no-store`.
+Citizen KYC responses keep their existing fields.
 
 ## Status codes
 

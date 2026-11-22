@@ -769,6 +769,8 @@ async def main():
         check("admin kyc list 1 pending", r.status_code == 200
               and r.json()["data"]["meta"]["total"] == 1)
         sub_id = r.json()["data"]["submissions"][0]["id"]
+        from admin_kyc_checks import check_admin_kyc
+        await check_admin_kyc(c, Session, AH, H, sub_id)
         r = await c.patch(f"/api/admin/kyc/{sub_id}", headers=AH,
                           json={"status": "approved", "note": "looks good"})
         check("kyc approve 200", r.status_code == 200 and r.json()["data"]["status"] == "approved")
@@ -841,6 +843,10 @@ async def main():
             check("portal cookie can seed categories", r.status_code == 201)
             r = await portal.get("/api/kyc/documents/selfie", params={"user_id": owner_id})
             check("portal cookie can read authorized document", r.status_code == 200
+                  and r.headers["Cache-Control"] == "private, no-store")
+            r = await portal.get(f"/api/admin/kyc/{sub_id}")
+            check("portal cookie can look up KYC independently of queue pages", r.status_code == 200
+                  and r.json()["data"]["user_id"] == owner_id
                   and r.headers["Cache-Control"] == "private, no-store")
             async with Session() as s:
                 await replace_password(s, await s.get(User, admin_id), hash_password("reset1234"))

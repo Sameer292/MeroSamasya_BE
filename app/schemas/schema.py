@@ -9,6 +9,7 @@ from pydantic import (
     ValidationInfo,
     field_validator,
     computed_field,
+    model_validator,
 )
 from typing import Annotated, Literal, Optional
 from datetime import date, datetime
@@ -401,9 +402,18 @@ class KycResponse(BaseModel):
     data: KycData
 
 
+class AdminKycData(KycData):
+    user_id: str
+
+
+class AdminKycResponse(BaseModel):
+    message: str
+    data: AdminKycData
+
+
 class KycListData(BaseModel):
     meta: PaginationMeta
-    submissions: list[KycData]
+    submissions: list[AdminKycData]
 
 
 class KycListResponse(BaseModel):
@@ -414,6 +424,13 @@ class KycListResponse(BaseModel):
 class KycReviewRequest(BaseModel):
     status: str = Field(pattern=r"^(approved|rejected)$")
     note: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_note(self):
+        self.note = (self.note or "").strip() or None
+        if self.status == "rejected" and not self.note:
+            raise ValueError("Enter a reason for rejection.")
+        return self
 
 
 class StatusUpdateRequest(BaseModel):

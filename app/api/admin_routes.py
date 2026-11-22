@@ -6,7 +6,7 @@ from app.schemas.schema import (
     IssueResponse,
     AdminOverviewResponse,
     KycListResponse,
-    KycResponse,
+    AdminKycResponse,
     KycReviewRequest,
     StatusUpdateRequest,
 )
@@ -14,6 +14,7 @@ from app.services.admin_service import (
     admin_update_status,
     admin_overview,
     admin_list_kyc,
+    admin_get_kyc,
     admin_review_kyc,
 )
 from app.core.database import get_db
@@ -60,24 +61,38 @@ async def list_kyc(
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
     status_filter: Optional[str] = Query(None, alias="status"),
+    search: Optional[str] = Query(None, max_length=200),
     db: AsyncSession = Depends(get_db),
     _admin=Depends(require_admin),
 ):
     response.headers.update(NO_STORE)
-    return await admin_list_kyc(page, limit, status_filter, db)
+    return await admin_list_kyc(page, limit, status_filter, db, search)
+
+
+@router.get("/kyc/{submission_id}", response_model=AdminKycResponse)
+async def get_kyc(
+    submission_id: str,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    response.headers.update(NO_STORE)
+    return await admin_get_kyc(submission_id, db)
 
 
 @router.patch(
     "/kyc/{submission_id}",
-    response_model=KycResponse,
+    response_model=AdminKycResponse,
     status_code=status.HTTP_200_OK,
 )
 async def review_kyc(
     submission_id: str,
     request: KycReviewRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     _admin=Depends(require_admin_write),
 ):
+    response.headers.update(NO_STORE)
     return await admin_review_kyc(
         submission_id, request.status, request.note, db
     )
