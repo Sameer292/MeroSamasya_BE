@@ -7,9 +7,13 @@ file serving, and admin reporting/status endpoints.
 
 Display the full issue UUID from the API's `id` field as the issue reference.
 Use the same value in issue URLs and when sharing or looking up an issue.
-The web detail view already displays `issue.id`, and the numeric
-`issueNumber` field is used only in mock data. The API uses a single identifier,
-so existing issues need no backfill.
+The API uses a single identifier, so existing issues need no backfill.
+
+Admin issue lists, details and subscriber issue history currently return
+`upvote_count: null` because those queries do not load vote counts. The portal
+must hide unavailable counts instead of displaying zero. Aggregate subscriber
+upvotes are deferred and have no API field. Citizen issue endpoints continue to
+return their actual counts.
 
 ## Admin authentication
 

@@ -714,11 +714,28 @@ async def main():
         r = await c.get("/api/admin/issues", headers=AH, params={"search": "updated title"})
         check("main admin issue search retains reporter and filters", r.status_code == 200
               and r.json()["data"]["issues"][0]["reporter"]["id"] == owner_id)
+        admin_issue = r.json()["data"]["issues"][0]
+        check("admin issue list uses the UUID reference and leaves unloaded votes unavailable",
+              admin_issue["id"] == iid and "issueNumber" not in admin_issue
+              and admin_issue["upvote_count"] is None)
+        r = await c.get(f"/api/admin/issues/{iid}", headers=AH)
+        check("admin issue detail leaves unloaded votes unavailable",
+              r.status_code == 200 and r.json()["data"]["upvote_count"] is None)
+        from app.schemas.admin_issues import AdminIssueData
+        for count in (0, 7):
+            check("admin issue schema preserves actual vote counts",
+                  AdminIssueData.model_validate({**admin_issue, "citizen": admin_issue["reporter"],
+                                                "upvote_count": count}).upvote_count == count)
         from admin_map_checks import check_admin_map
         await check_admin_map(c, Session, AH, issue)
         r = await c.get(f"/api/admin/subscribers/{owner_id}", headers=AH)
         check("main subscriber detail resolves a live local level", r.status_code == 200
               and r.json()["data"]["location"] == {"id": level_id, "name": home.name})
+        subscriber = r.json()["data"]
+        check("subscriber totals omit deferred upvotes and history leaves unloaded votes unavailable",
+              "upvote_count" not in subscriber and "upvotes" not in subscriber
+              and subscriber["issue_history"]["issues"]
+              and all(row["upvote_count"] is None for row in subscriber["issue_history"]["issues"]))
         r = await c.post(f"/api/admin/issues/{iid}/moderation", headers=AH, json={"category_id": new_cat})
         check("main moderation can assign an active category", r.status_code == 200)
         r = await c.delete(f"/api/category/{new_cat}", headers=AH)
