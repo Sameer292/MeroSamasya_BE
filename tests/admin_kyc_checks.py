@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from sqlalchemy import delete
 
@@ -36,7 +36,7 @@ async def check_admin_kyc(client, Session, admin_headers, citizen_headers, submi
             KycSubmission(
                 **values, id=sub_id, user_id=user_id, full_name=f"Queue%_ Applicant {index}",
                 status="pending" if index < 2 else "rejected",
-                created_at=datetime.now(UTC).replace(microsecond=0) + timedelta(days=1),
+                created_at=datetime(2026, 10, 15, 18, 14 + min(index, 1), tzinfo=UTC),
             ) for index, (sub_id, user_id) in enumerate(zip(submission_ids, user_ids))
         ])
         await session.commit()
@@ -54,6 +54,12 @@ async def check_admin_kyc(client, Session, admin_headers, citizen_headers, submi
                               ({"search": "no matching applicant"}, 0), ({"search": original["citizenship_number"]}, 4)):
             response = await client.get("/api/admin/kyc", headers=admin_headers, params=params)
             assert response.status_code == 200 and response.json()["data"]["meta"]["total"] == total, response.text
+        for sort, expected in (("name_asc", submission_ids[1:]), ("name_desc", submission_ids[1:][::-1])):
+            response = await client.get("/api/admin/kyc", headers=admin_headers, params={
+                "search": "queue%_", "submitted_on": "2026-10-16", "sort": sort,
+            })
+            assert response.status_code == 200, response.text
+            assert [row["id"] for row in response.json()["data"]["submissions"]] == expected
         response = await client.get("/api/admin/kyc", headers=admin_headers, params={"search": "x" * 201})
         assert response.status_code == 422
         response = await client.get("/api/admin/kyc", headers=admin_headers, params={"status": "invalid"})

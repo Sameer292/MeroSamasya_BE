@@ -711,16 +711,19 @@ async def main():
         check("admin without credentials 401", r.status_code == 401)
         r = await c.get("/api/admin/issues/overview", headers=AH)
         check("overview 200", r.status_code == 200 and r.json()["data"]["total_issues"] == 1)
+        vote = await c.post(vote_url, headers=H2, json={"upvoted": True})
+        expected_votes = vote.json()["data"]["upvote_count"]
+        check("admin vote fixture has stored votes", vote.status_code == 200 and expected_votes > 0)
         r = await c.get("/api/admin/issues", headers=AH, params={"search": "updated title"})
         check("main admin issue search retains reporter and filters", r.status_code == 200
               and r.json()["data"]["issues"][0]["reporter"]["id"] == owner_id)
         admin_issue = r.json()["data"]["issues"][0]
-        check("admin issue list uses the UUID reference and leaves unloaded votes unavailable",
+        check("admin issue list uses the UUID reference and includes stored votes",
               admin_issue["id"] == iid and "issueNumber" not in admin_issue
-              and admin_issue["upvote_count"] is None)
+              and admin_issue["upvote_count"] == expected_votes)
         r = await c.get(f"/api/admin/issues/{iid}", headers=AH)
-        check("admin issue detail leaves unloaded votes unavailable",
-              r.status_code == 200 and r.json()["data"]["upvote_count"] is None)
+        check("admin issue detail includes stored votes",
+              r.status_code == 200 and r.json()["data"]["upvote_count"] == expected_votes)
         from app.schemas.admin_issues import AdminIssueData
         for count in (0, 7):
             check("admin issue schema preserves actual vote counts",
@@ -732,10 +735,11 @@ async def main():
         check("main subscriber detail resolves a live local level", r.status_code == 200
               and r.json()["data"]["location"] == {"id": level_id, "name": home.name})
         subscriber = r.json()["data"]
-        check("subscriber totals omit deferred upvotes and history leaves unloaded votes unavailable",
+        check("subscriber totals omit aggregate votes and history includes per-report votes",
               "upvote_count" not in subscriber and "upvotes" not in subscriber
               and subscriber["issue_history"]["issues"]
-              and all(row["upvote_count"] is None for row in subscriber["issue_history"]["issues"]))
+              and any(row["id"] == iid and row["upvote_count"] == expected_votes
+                      for row in subscriber["issue_history"]["issues"]))
         r = await c.post(f"/api/admin/issues/{iid}/moderation", headers=AH, json={"category_id": new_cat})
         check("main moderation can assign an active category", r.status_code == 200)
         r = await c.delete(f"/api/category/{new_cat}", headers=AH)
