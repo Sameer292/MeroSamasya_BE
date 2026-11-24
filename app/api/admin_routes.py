@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -10,6 +11,7 @@ from app.schemas.schema import (
     KycReviewRequest,
     StatusUpdateRequest,
 )
+from app.schemas.admin_kyc import KycSort
 from app.services.admin_service import (
     admin_update_status,
     admin_overview,
@@ -62,11 +64,13 @@ async def list_kyc(
     limit: int = Query(10, ge=1, le=100),
     status_filter: Optional[str] = Query(None, alias="status"),
     search: Optional[str] = Query(None, max_length=200),
+    sort: KycSort = Query("newest"),
+    submitted_on: date | None = Query(None),
     db: AsyncSession = Depends(get_db),
     _admin=Depends(require_admin),
 ):
     response.headers.update(NO_STORE)
-    return await admin_list_kyc(page, limit, status_filter, db, search)
+    return await admin_list_kyc(page, limit, status_filter, db, search, sort, submitted_on)
 
 
 @router.get("/kyc/{submission_id}", response_model=AdminKycResponse)
