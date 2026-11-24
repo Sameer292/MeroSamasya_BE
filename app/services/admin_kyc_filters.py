@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
@@ -11,9 +11,11 @@ def submission_day_filters(day: date | None):
     if day is None:
         return []
     start = datetime.combine(day, time.min, tzinfo=ZoneInfo("Asia/Kathmandu"))
-    filters = [KycSubmission.created_at >= start]
+    filters = []
+    if day != date.min:
+        filters.append(KycSubmission.created_at >= start.astimezone(UTC))
     if day != date.max:
-        filters.append(KycSubmission.created_at < start + timedelta(days=1))
+        filters.append(KycSubmission.created_at < (start + timedelta(days=1)).astimezone(UTC))
     return filters
 
 
