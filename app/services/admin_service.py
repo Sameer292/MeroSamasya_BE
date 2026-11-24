@@ -1,11 +1,14 @@
 import math
+from datetime import date
 
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 from app.models.models import User, KycSubmission
+from app.schemas.admin_kyc import KycSort
 from app.schemas.enum import IssueStatusEnum, KycStatusEnum
 from app.schemas.issue_moderation import IssueModerationRequest
+from app.services.admin_kyc_filters import submission_day_filters, submission_order
 from app.services.admin_issue_service import get_issue_status_totals
 from app.services.issue_moderation_service import moderate_issue
 from app.services.issue_service import get_issue_by_id
@@ -53,10 +56,12 @@ async def admin_list_kyc(
     status_filter: str | None,
     db: AsyncSession,
     search: str | None = None,
+    sort: KycSort = "newest",
+    submitted_on: date | None = None,
 ):
     try:
         offset = (page - 1) * limit
-        filters = []
+        filters = submission_day_filters(submitted_on)
         if status_filter is not None:
             if status_filter not in ("pending", "approved", "rejected"):
                 raise HTTPException(
@@ -75,7 +80,7 @@ async def admin_list_kyc(
         result = await db.execute(
             select(KycSubmission)
             .where(*filters)
-            .order_by(KycSubmission.created_at.desc(), KycSubmission.id.desc())
+            .order_by(*submission_order(sort))
             .offset(offset)
             .limit(limit)
         )
