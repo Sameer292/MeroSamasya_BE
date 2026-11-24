@@ -9,6 +9,7 @@ from app.schemas.admin_subscribers import (
     SubscriberProfile,
 )
 from app.schemas.enum import AccountStatusEnum, UserRole
+from app.services.issue_vote_counts import load_issue_vote_counts
 from app.services.subscriber_pagination import pagination_meta
 from app.services.subscriber_queries import profile_options, subscriber_directory, subscriber_history
 
@@ -44,9 +45,11 @@ async def get_subscriber(db: AsyncSession, subscriber_id: str, pagination: Subsc
         raise HTTPException(404, "Subscriber not found")
     rows = (await db.execute(subscriber_history(subscriber_id, pagination))).all()
     _, total, resolved = rows[0]
+    issues = [issue for issue, _, _ in rows if issue is not None]
+    await load_issue_vote_counts(db, issues)
     return {"data": subscriber_data(user, total, resolved) | {
         "issue_history": {
             "meta": pagination_meta(pagination, total),
-            "issues": [issue for issue, _, _ in rows if issue is not None],
+            "issues": issues,
         },
     }}
