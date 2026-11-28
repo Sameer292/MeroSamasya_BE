@@ -9,8 +9,9 @@ from app.schemas.schema import IssueData, Latitude, Longitude, PaginationMeta
 class AdminIssueQuery(BaseModel):
     search: str | None = Field(default=None, max_length=200)
     status: IssueStatusEnum | None = None
+    active_only: bool = False
     category_id: str | None = Field(default=None, min_length=1)
-    sort: Literal["newest", "oldest"] = "newest"
+    sort: Literal["newest", "oldest", "upvotes"] = "newest"
     page: int = Field(default=1, ge=1, le=2_147_483_647)
     limit: int = Field(default=10, ge=1, le=100)
     south: Latitude | None = None

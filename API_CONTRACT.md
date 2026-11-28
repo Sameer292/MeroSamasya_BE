@@ -231,7 +231,7 @@ subscriber upvotes are deferred and are not part of the subscriber API.
 
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| GET | `/api/admin/issues?page&limit&status&category_id&search&sort&south&north&west&east` | — | paginated results with reporter details and optional filters; bounds are inclusive and applied before pagination/counts. Supply all four finite bounds together, ordered south ≤ north and west ≤ east, within latitude ±90 and longitude ±180; invalid bounds return 422. Omit bounds for the full directory. |
+| GET | `/api/admin/issues?page&limit&status&active_only&category_id&search&sort&south&north&west&east` | — | paginated results with reporter details and optional filters. Use `active_only=true` for open and in-progress reports. Sort by `newest` (default), `oldest`, or `upvotes` (most first, newest reports first on ties). Map bounds are inclusive and applied before pagination/counts. Supply all four finite bounds together, ordered south ≤ north and west ≤ east, within latitude ±90 and longitude ±180; invalid bounds return 422. Omit bounds for the full directory. |
 | GET | `/api/admin/issues/overview` | — | `{open, in_progress, resolved, closed, total_issues, total_users, kyc_pending}` |
 | PATCH | `/api/admin/issues/{id}/status` | `{status}` | Applies the moderation transition policy (409 for an invalid transition), records the change and notifies the owner |
 | GET | `/api/admin/kyc?page&limit&status&search&sort&submitted_on` | — | submissions with status; literal case-insensitive search by applicant name or citizenship number (max 200 characters), applied before counts and pagination; optional `submitted_on` (YYYY-MM-DD, Nepal time); sort by `newest` (default), `oldest`, `name_asc`, or `name_desc` |

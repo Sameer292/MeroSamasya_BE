@@ -1,8 +1,9 @@
 from sqlalchemy import func, or_, select, true
 from sqlalchemy.orm import selectinload
 
-from app.models.models import Issue, User
+from app.models.models import Issue, Upvote, User
 from app.schemas.admin_issues import AdminIssueQuery
+from app.schemas.enum import IssueStatusEnum
 
 
 def issue_read_options():
@@ -15,6 +16,9 @@ def issue_read_options():
 
 def filtered_issue_ids(query: AdminIssueQuery):
     issues = select(Issue.id, Issue.created_at).where(Issue.deleted_at.is_(None))
+    if query.sort == "upvotes":
+        votes = select(func.count()).where(Upvote.issue_id == Issue.id).scalar_subquery()
+        issues = issues.add_columns(votes.label("vote_rank"))
     if query.south is not None:
         issues = issues.where(
             Issue.latitude.between(query.south, query.north),
@@ -22,6 +26,8 @@ def filtered_issue_ids(query: AdminIssueQuery):
         )
     if query.status is not None:
         issues = issues.where(Issue.status == query.status)
+    if query.active_only:
+        issues = issues.where(Issue.status.in_((IssueStatusEnum.open, IssueStatusEnum.in_progress)))
     if query.category_id is not None:
         issues = issues.where(Issue.category_id == query.category_id)
     if search := (query.search or "").strip():
@@ -36,7 +42,10 @@ def filtered_issue_ids(query: AdminIssueQuery):
 def issue_order(columns, query: AdminIssueQuery):
     if query.sort == "oldest":
         return columns.created_at.asc().nulls_last(), columns.id.asc()
-    return columns.created_at.desc().nulls_last(), columns.id.desc()
+    newest = columns.created_at.desc().nulls_last(), columns.id.desc()
+    if query.sort == "upvotes":
+        return columns.vote_rank.desc().nulls_last(), *newest
+    return newest
 
 
 def admin_issue_page(query: AdminIssueQuery):
