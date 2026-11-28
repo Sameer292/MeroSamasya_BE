@@ -5,12 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.issue_moderation import IssueModerationEvent
-from app.models.models import Category, Issue
+from app.models.models import Category, Issue, User
 from app.schemas.issue_moderation import (
     IssueModerationRequest,
     IssueModerationResult,
     ModeratedIssue,
     ModerationEvent,
+    ModerationHistoryEvent,
 )
 from app.services.issue_transitions import resolution_timestamp
 from app.services.notification_service import notify
@@ -91,9 +92,13 @@ async def moderate_issue(
 async def list_moderation_events(db: AsyncSession, issue_id: str):
     if await db.scalar(select(Issue.id).where(Issue.id == issue_id)) is None:
         raise HTTPException(404, "Issue not found")
-    events = await db.scalars(
-        select(IssueModerationEvent)
+    events = await db.execute(
+        select(IssueModerationEvent, User.name)
+        .outerjoin(User, User.id == IssueModerationEvent.reviewer_id)
         .where(IssueModerationEvent.issue_id == issue_id)
         .order_by(IssueModerationEvent.created_at.desc(), IssueModerationEvent.id.desc())
     )
-    return events.all()
+    return [
+        ModerationHistoryEvent.model_validate(event).model_copy(update={"reviewer_name": name})
+        for event, name in events
+    ]

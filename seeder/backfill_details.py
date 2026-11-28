@@ -1,7 +1,6 @@
 """Refresh votes and document headings for the configured Hetauda demo."""
 
 from collections import defaultdict
-from itertools import product
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
@@ -12,7 +11,7 @@ from app.models.models import KycDocument, KycSubmission, Upvote, User
 from app.schemas.enum import KycStatusEnum
 from seeder.assets import DOCUMENT_TITLES, sample_document
 from seeder.backfill import demo_reviewer, find_demo_reports
-from seeder.catalog import REPORT_TEMPLATES, SITES
+from seeder.catalog import demo_report_index
 from seeder.demo_votes import build_demo_upvotes
 
 
@@ -25,10 +24,7 @@ def demo_identity_filters():
 
 
 async def fill_demo_votes(db, reports):
-    indexes = {
-        f"{template.title} | {site[0]}": index
-        for index, (site, template) in enumerate(product(SITES, REPORT_TEMPLATES))
-    }
+    indexes = demo_report_index()
     voters = list(await db.scalars(
         select(User.id).join(KycSubmission)
         .where(*demo_identity_filters(), KycSubmission.status == KycStatusEnum.approved)
@@ -42,7 +38,7 @@ async def fill_demo_votes(db, reports):
     added = [
         vote
         for issue in reports
-        for vote in build_demo_upvotes(issue, indexes[issue.title], voters, existing[issue.id])
+        for vote in build_demo_upvotes(issue, indexes[issue.title, issue.description, issue.address], voters, existing[issue.id])
     ]
     db.add_all(added)
     return len(added)

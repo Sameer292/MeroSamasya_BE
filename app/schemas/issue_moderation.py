@@ -35,6 +35,10 @@ class ModerationEvent(BaseModel):
     changes: list[ModerationChange]
 
 
+class ModerationHistoryEvent(ModerationEvent):
+    reviewer_name: str | None = None
+
+
 class ModeratedIssue(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -55,4 +59,4 @@ class IssueModerationResponse(BaseModel):
 
 
 class ModerationHistoryResponse(BaseModel):
-    data: list[ModerationEvent]
+    data: list[ModerationHistoryEvent]

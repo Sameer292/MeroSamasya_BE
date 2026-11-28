@@ -20,7 +20,6 @@ from seeder.catalog import (
     HETAUDA,
     LAST_NAMES,
     MAKWANPUR,
-    REPORT_TEMPLATES,
     REPORTER_COUNT,
     SITES,
     STATUS_COUNTS,
@@ -31,10 +30,12 @@ from app.models.nepal_location_models import District, LocalLevel
 from app.schemas.enum import IssueStatusEnum, KycStatusEnum, UserRole
 from app.services.auth_service import hash_password
 from app.services.category_service import CATEGORIES
-from seeder.assets import DemoPhotos, download_assets, issue_photo_keys, sample_document
+from app.services.issue_service import MAX_IMAGES
+from seeder.assets import DemoPhotos, download_assets, sample_document
 from app.services.report_area_service import boundaries
-from seeder.report_examples import closed_report_event, report_detail_photo
+from seeder.report_examples import report_detail_photo, report_status_events
 from seeder.demo_votes import build_demo_upvotes
+from seeder.reports import REPORTS_BY_SITE
 
 LOCATION_TABLES = {"provinces", "districts", "local_levels"}
 
@@ -158,9 +159,13 @@ def report_fixtures():
     tree, names, _ = boundaries()
     random = Random(209)
     previous = []
-    combinations = list(product(SITES, REPORT_TEMPLATES))
+    combinations = [
+        (anchor, report)
+        for anchor in SITES
+        for report in REPORTS_BY_SITE[anchor[0]]
+    ]
     if len(combinations) != len(statuses):
-        raise ValueError("Report templates and status counts must describe the same number of issues.")
+        raise ValueError("The report catalog and status counts must describe the same number of issues.")
     for index, ((site, latitude, longitude), template) in enumerate(combinations):
         pin = spread_report_pin(random, (latitude, longitude), previous, tree, names)
         previous.append(pin)
@@ -170,20 +175,37 @@ def report_fixtures():
 def build_issue(index, fixture, owner, location_id, category, now) -> Issue:
     site, latitude, longitude, template, status = fixture
     created = now - timedelta(days=2 + index * 5 % 89, hours=index % 24)
-    updated = created if status == IssueStatusEnum.open else created + timedelta(hours=18)
+    updated = created if status == IssueStatusEnum.open else created + timedelta(hours=18 + index % 17)
     return Issue(
         citizen_id=owner.id, category_id=category.id, local_level_id=location_id,
-        title=f"{template.title} | {site}", description=template.details,
+        title=template.title, description=template.description,
         status=status, latitude=latitude, longitude=longitude, address=f"{site}, Hetauda, Makwanpur",
         created_at=created, updated_at=updated,
         resolved_at=updated if status == IssueStatusEnum.resolved else None,
     )
 
 
-def add_report_media(db, issue, template, index, photo_bytes, photos) -> None:
-    images = [photo_bytes[key] for key in issue_photo_keys(template.photo, index)]
-    if len(images) == 1:
-        images.append(report_detail_photo(images[0]))
+def demo_report_assignments(citizens, random):
+    reporters = random.sample(citizens[:APPROVED_COUNT], REPORTER_COUNT)
+    # Most residents report once or not at all. A small group reports regularly.
+    report_counts = [1] * 32 + [2] * 15 + [3] * 8 + [4] * 3 + [5] * 2
+    owners = [
+        citizen
+        for citizen, count in zip(reporters, report_counts, strict=True)
+        for _ in range(count)
+    ]
+    # Preserve the showcase total of 232 attachments while using the whole range.
+    photo_counts = [1] * 24 + [2] * 44 + [MAX_IMAGES] * 40
+    random.shuffle(owners)
+    random.shuffle(photo_counts)
+    return zip(owners, photo_counts, strict=True)
+
+
+def add_report_media(db, issue, photo, count, photos) -> None:
+    images = [photo] + [
+        report_detail_photo(photo, inset_divisor=divisor)
+        for divisor in (6, 4)[:count - 1]
+    ]
     for content in images:
         url = photos.add(db, "issues", content)
         issue.media.append(IssueMedia(url=url, created_at=issue.created_at))
@@ -197,19 +219,18 @@ async def populate(db, location, fixtures, photo_bytes, avatars, photos) -> None
     citizens, reviewer_id = await seed_accounts(db, location_id, avatars, photos, now)
     await seed_kyc(db, citizens, location, avatars, now)
     voter_ids = [citizen.id for citizen in citizens[:APPROVED_COUNT]]
-    closed_reports = []
-    for index, fixture in enumerate(fixtures):
+    issues = []
+    assignments = demo_report_assignments(citizens, Random(421))
+    for index, (fixture, (owner, photo_count)) in enumerate(zip(fixtures, assignments, strict=True)):
         template = fixture[3]
-        owner = citizens[(index * 29) % REPORTER_COUNT]
         issue = build_issue(index, fixture, owner, location_id, categories[template.category], now)
-        add_report_media(db, issue, template, index, photo_bytes, photos)
-        if issue.status == IssueStatusEnum.closed:
-            closed_reports.append(issue)
+        add_report_media(db, issue, photo_bytes[template.photo], photo_count, photos)
+        issues.append(issue)
         db.add(issue)
         db.add_all(build_demo_upvotes(issue, index, voter_ids))
     await db.flush()
 
-    db.add_all(closed_report_event(issue, reviewer_id) for issue in closed_reports)
+    db.add_all(event for issue in issues for event in report_status_events(issue, reviewer_id))
 
 
 async def reset_and_seed() -> str:

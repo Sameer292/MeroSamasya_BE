@@ -46,15 +46,20 @@ Hetauda Sub-Metropolitan City record for every seeded account and report.
 | Pending KYC | 10 |
 | Rejected KYC | 5 |
 | Citizens without KYC | 5 |
-| Open issues | 60 |
-| In-progress issues | 23 |
-| Resolved issues | 16 |
-| Closed issues | 9 |
+| Open issues | 10 |
+| In-progress issues | 15 |
+| Resolved issues | 66 |
+| Closed issues | 17 |
 | Distinct citizen reporters | 60 |
+| Issue attachments | 232 |
 
-Report upvote counts range from 0 to 40, with many at or below 30. Each seeded upvote comes from a
+Seeded vote totals vary by report, with most reports getting modest engagement and a few drawing more votes. Each seeded upvote comes from a
 distinct approved citizen other than the reporter.
-Reports have one to three attachments, within the app's upload limit.
+The 108 reports have distinct titles and descriptions. Twenty-four have one
+attachment, 44 have two, and 40 have three. Forty citizens have no reports.
+The other 60 have between one and five reports, with most reporting once.
+The demo admin is credited for the status changes on in-progress, resolved,
+and closed reports.
 
 Use `admin@gmail.com` for the admin or `ram@example.com` for a verified citizen.
 Every demo account uses `password@123`. Other citizens use simple names such as
@@ -67,8 +72,10 @@ and use the same private document storage as normal KYC submissions.
 
 ## Image credits
 
-Issue photos are illustrative samples. They do not depict the seeded report
-locations. The seeder resizes the images and strips embedded metadata.
+The Hetauda reports are fictional. Eighteen illustrative photos are reused
+across reports of similar conditions. Each report includes a wider view, sometimes with one
+or two crops from the same source photo. The seeder resizes the images and
+strips embedded metadata. Crops retain the source photo's license.
 
 - [Marked Pothole](https://commons.wikimedia.org/wiki/File:Marked_Pothole.jpg) by Prosthetic Head, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 - [Hole in the road](https://commons.wikimedia.org/wiki/File:Hole_in_the_road_-_Flickr_-_Robbie1.jpg) by Robbie Sproule, [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/).
@@ -78,13 +85,24 @@ locations. The seeder resizes the images and strips embedded metadata.
 - [Flooded street and vehicles](https://commons.wikimedia.org/wiki/File:Flooded_street_and_vehicles.JPG) by MarkBuckawicki, [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
 - [Street Garbage](https://commons.wikimedia.org/wiki/File:Street_Garbage.jpg) by Gaurav Dhwaj Khadka, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 - [Cracked sidewalk 1](https://commons.wikimedia.org/wiki/File:Cracked_sidewalk_1.jpg) by Downtowngal, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- [Puddle beside a storm drain](https://commons.wikimedia.org/wiki/File:A_puddle_after_rain_on_a_damaged_asphalt_surface,_a_storm_drain_grate_on.jpg) by Tarasna0922, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- [Broken guardrail](https://commons.wikimedia.org/wiki/File:Broken_guardrail.jpg) by NCDOTcommunications, [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/).
+- [Water inside streetlamp](https://commons.wikimedia.org/wiki/File:Water_inside_streetlamp.JPG) by Dmitry G, public domain.
+- [A fallen street light pole](https://commons.wikimedia.org/wiki/File:A_fallen_street_light_pole.jpg) by Niera, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- [Damaged railing](https://commons.wikimedia.org/wiki/File:Damaged_railing_(36410647834).jpg) by Oregon Department of Transportation, [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/).
+- [Garbage in the street of Kathmandu](https://commons.wikimedia.org/wiki/File:Garbage_in_the_street_of_Kathmandu.jpg) by Gaurav Dhwaj Khadka, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+- [Dirty River, bridge in Kathmandu, Nepal](https://commons.wikimedia.org/wiki/File:Dirty_River,_bridge_in_Kathmandu,_Nepal.jpg) by S Pakhrin, [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/).
+- [Broken sidewalk from tree roots](https://commons.wikimedia.org/wiki/File:2008-06-28_Broken_sidewalk.jpg) by Ildar Sagdejev, [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
+- [Landslide on the Trisuli Rajmarg](https://commons.wikimedia.org/wiki/File:Trisuli_Rajmarg0700.JPG) by Sundar1, [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
+- [Fallen tree, broken fence](https://commons.wikimedia.org/wiki/File:Fallen_tree,_broken_fence.jpg) by Packer1028, [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
 - [Lorelei avatars](https://www.dicebear.com/licenses/) by Lisa Wischofsky via DiceBear, [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
 
 
 ## Fill gaps in an existing demo
 
 Run `uv run python -m seeder.seed --backfill-demo-media` to add a detail image to
-single-photo Hetauda demo reports and add missing history to closed demo reports.
+older single-photo Hetauda demo reports and add missing status history to
+recognized demo reports.
 The backfill uses the configured database and media directory without resetting
 tables. Set `SEED_DATABASE_URL` to select a different demo database.
 
