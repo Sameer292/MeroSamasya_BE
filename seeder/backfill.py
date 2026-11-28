@@ -12,8 +12,9 @@ from app.models.issue_moderation import IssueModerationEvent
 from app.models.models import Issue, IssueMedia, User
 from app.schemas.enum import IssueStatusEnum
 from seeder.assets import DemoPhotos
-from seeder.catalog import ADMIN_EMAIL, REPORT_TEMPLATES, SITES
-from seeder.report_examples import closed_report_event, report_detail_photo
+from seeder.catalog import ADMIN_EMAIL, demo_report_index
+from seeder.reports import REPORTS_BY_SITE
+from seeder.report_examples import report_detail_photo, report_status_events
 
 
 async def demo_reviewer(db):
@@ -24,10 +25,7 @@ async def demo_reviewer(db):
 
 
 async def find_demo_reports(db):
-    expected = {
-        (f"{template.title} | {site}", template.details, f"{site}, Hetauda, Makwanpur")
-        for site, *_ in SITES for template in REPORT_TEMPLATES
-    }
+    expected = demo_report_index()
     candidates = await db.scalars(
         select(Issue).join(Issue.citizen)
         .where(Issue.deleted_at.is_(None), User.phone.like("980000%"),
@@ -53,16 +51,25 @@ def add_detail_attachment(db, issue, photos) -> bool:
     return True
 
 
-async def add_closed_history(db, reports, reviewer_id: str) -> int:
-    closed = {issue.id: issue for issue in reports if issue.status == IssueStatusEnum.closed}
-    if not closed:
+async def add_status_history(db, reports, reviewer_id: str) -> int:
+    changed_reports = [issue for issue in reports if issue.status != IssueStatusEnum.open]
+    if not changed_reports:
         return 0
-    recorded = set(await db.scalars(
-        select(IssueModerationEvent.issue_id).where(IssueModerationEvent.issue_id.in_(closed))
-    ))
-    missing = closed.keys() - recorded
-    db.add_all(closed_report_event(closed[issue_id], reviewer_id) for issue_id in missing)
-    return len(missing)
+    recorded = {
+        issue_id
+        for issue_id, changes in await db.execute(
+            select(IssueModerationEvent.issue_id, IssueModerationEvent.changes)
+            .where(IssueModerationEvent.issue_id.in_([issue.id for issue in changed_reports]))
+        )
+        if any(change["field"] == "status" for change in changes)
+    }
+    events = [
+        event
+        for issue in changed_reports if issue.id not in recorded
+        for event in report_status_events(issue, reviewer_id)
+    ]
+    db.add_all(events)
+    return len(events)
 
 
 async def backfill_demo() -> str:
@@ -73,8 +80,12 @@ async def backfill_demo() -> str:
             if not reviewer:
                 raise ValueError("No Hetauda demo reviewer found in the configured database.")
             reports = await find_demo_reports(db)
-            events = await add_closed_history(db, reports, reviewer)
-            attachments = sum(add_detail_attachment(db, issue, photos) for issue in reports)
+            events = await add_status_history(db, reports, reviewer)
+            current_titles = {report.title for group in REPORTS_BY_SITE.values() for report in group}
+            attachments = sum(
+                add_detail_attachment(db, issue, photos)
+                for issue in reports if issue.title not in current_titles
+            )
             photos.write()
     except BaseException:
         photos.discard()

@@ -19,6 +19,16 @@ PHOTO_FILES = {
     "flood_traffic": "Flooded_street_and_vehicles.JPG",
     "waste": "Street_Garbage.jpg",
     "sidewalk": "Cracked_sidewalk_1.jpg",
+    "drain": "A_puddle_after_rain_on_a_damaged_asphalt_surface,_a_storm_drain_grate_on.jpg",
+    "guardrail": "Broken_guardrail.jpg",
+    "lamp": "Water_inside_streetlamp.JPG",
+    "pole": "A_fallen_street_light_pole.jpg",
+    "railing": "Damaged_railing_(36410647834).jpg",
+    "refuse": "Garbage_in_the_street_of_Kathmandu.jpg",
+    "river": "Dirty_River,_bridge_in_Kathmandu,_Nepal.jpg",
+    "roots": "2008-06-28_Broken_sidewalk.jpg",
+    "slide": "Trisuli_Rajmarg0700.JPG",
+    "tree": "Fallen_tree,_broken_fence.jpg",
 }
 DOCUMENT_TITLES = {
     "selfie": "Selfie",
@@ -29,21 +39,11 @@ AVATAR_COUNT = 16
 MAX_DOWNLOAD = 12 * 1024 * 1024
 
 
-def issue_photo_keys(primary: str, index: int) -> tuple[str, ...]:
-    alternatives = {
-        "pothole": ("asphalt", "road_detail"),
-        "asphalt": ("road_detail", "pothole"),
-        "flood": ("flood_crossing", "flood_traffic"),
-    }.get(primary, ())
-    total = (1, 2, 3, 2, 1, 3, 2)[index % 7]
-    return (primary, *alternatives[:total - 1])
-
-
 def commons_url(filename: str) -> str:
     digest = md5(filename.encode(), usedforsecurity=False).hexdigest()
     name = quote(filename)
     path = f"{digest[0]}/{digest[:2]}/{name}/960px-{name}"
-    return f"https://upload.wikimedia.org/wikipedia/commons/thumb/{path}"
+    return f"https://thumb.wikimedia.org/wikipedia/commons/thumb/{path}"
 
 
 def jpeg(image: Image.Image) -> bytes:
